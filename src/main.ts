@@ -5,7 +5,9 @@ import { TransformInterceptor } from './common/interceptors';
 import { HttpExceptionFilter } from './common/filters';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+  });
 
   // Global validation pipe
   app.useGlobalPipes(
