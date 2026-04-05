@@ -224,12 +224,20 @@ export class ScoringService {
     return 1.0 + conf.onTime;
   }
 
+  async getUserScore(projectId: string, userId: string) {
+    return this.prisma.contributionScore.findUnique({
+      where: {
+        projectId_userId: { projectId, userId },
+      },
+    });
+  }
+
   async applyOverride(
     projectId: string,
     userId: string,
-    actorId: string,
     delta: number,
-    reason: string
+    reason: string,
+    actorId: string
   ): Promise<void> {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new Error('Project not found');

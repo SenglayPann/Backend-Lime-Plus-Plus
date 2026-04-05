@@ -1,0 +1,60 @@
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ProjectsService } from './projects.service';
+import { CreateProjectDto } from './dto/create-project.dto';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../generated/prisma/enums';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+
+@ApiTags('Projects')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller('projects')
+export class ProjectsController {
+  constructor(private readonly projectsService: ProjectsService) {}
+
+  @Post()
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'Create a new project (Dept Manager+)' })
+  async create(@Body() createProjectDto: CreateProjectDto) {
+    return this.projectsService.create(createProjectDto);
+  }
+
+  @Get()
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'List projects (Dept Manager+)' })
+  @ApiQuery({ name: 'department_id', required: false })
+  async findAll(@Query('department_id') departmentId?: string) {
+    return this.projectsService.findAll(departmentId);
+  }
+
+  @Get(':id')
+  @Roles(Role.PROJECT_MEMBER)
+  @ApiOperation({ summary: 'Get project details' })
+  async findOne(@Param('id') id: string) {
+    return this.projectsService.findOne(id);
+  }
+
+  @Post(':id/lock')
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'Lock project for grading (Dept Manager+)' })
+  async lock(@Param('id') id: string, @Request() req: any) {
+    return this.projectsService.lockProject(id, req.user.id);
+  }
+
+  @Post(':id/tasks/sync')
+  @Roles(Role.PROJECT_MANAGER)
+  @ApiOperation({ summary: 'Manual sync tasks from GitHub (Project Manager+)' })
+  async syncTasks(@Param('id') id: string, @Request() req: any) {
+    // In a real app, the accessToken would come from the user's session or GitHub App token
+    // For now, we'll assume it's passed or available. 
+    // We might need to fetch it from the database or GitHubService.
+    
+    // Note: The spec says this expects an accessToken. 
+    // If not provided in body, we might need to get it from the user's OAuth record.
+    const accessToken = req.headers['x-github-token'] || process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+    
+    return this.projectsService.syncTasks(id, accessToken, req.user.id);
+  }
+}

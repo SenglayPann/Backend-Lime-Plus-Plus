@@ -75,4 +75,27 @@ export class UsersService {
       roles,
     };
   }
+
+  async assignRole(userId: string, role: string, organizationId?: string, departmentId?: string) {
+    return this.prisma.userRole.create({
+      data: {
+        userId,
+        role: role as any,
+        organizationId,
+        departmentId,
+      },
+    });
+  }
+
+  async removeRole(roleId: string) {
+    return this.prisma.userRole.delete({
+      where: { id: roleId },
+    });
+  }
+
+  async findAll() {
+    return this.prisma.user.findMany({
+      include: { userRoles: true },
+    });
+  }
 }

@@ -8,6 +8,13 @@ import { AuthModule } from './auth/auth.module';
 import { GitHubModule } from './github/github.module';
 import { ScoringModule } from './scoring/scoring.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { OrganizationsModule } from './organizations/organizations.module';
+import { DepartmentsModule } from './departments/departments.module';
+import { ProjectsModule } from './projects/projects.module';
+import { TasksModule } from './tasks/tasks.module';
+import { PullRequestsModule } from './pull-requests/pull-requests.module';
+import { AuditModule } from './common/audit/audit.module';
+import { ReportsModule } from './common/reports/reports.module';
 
 @Module({
   imports: [
@@ -28,6 +35,13 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
     GitHubModule,
     ScoringModule,
     EventEmitterModule.forRoot(),
+    OrganizationsModule,
+    DepartmentsModule,
+    ProjectsModule,
+    TasksModule,
+    PullRequestsModule,
+    AuditModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
