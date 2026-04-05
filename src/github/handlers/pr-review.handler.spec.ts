@@ -12,6 +12,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PrReviewHandler } from './pr-review.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 describe('PrReviewHandler', () => {
   let handler: PrReviewHandler;
@@ -24,11 +25,16 @@ describe('PrReviewHandler', () => {
     contributionEvent: { create: jest.fn() },
   };
 
+  const mockEventEmitter = {
+    emit: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PrReviewHandler,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 

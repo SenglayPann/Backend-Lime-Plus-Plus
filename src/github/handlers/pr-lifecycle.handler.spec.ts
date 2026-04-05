@@ -13,6 +13,7 @@ import { PrLifecycleHandler } from './pr-lifecycle.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubService } from '../github.service';
 import { Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 describe('PrLifecycleHandler', () => {
   let handler: PrLifecycleHandler;
@@ -26,6 +27,10 @@ describe('PrLifecycleHandler', () => {
     contributionEvent: { create: jest.fn() },
   };
 
+  const mockEventEmitter = {
+    emit: jest.fn(),
+  };
+
   const mockGitHubService = {
     getAppInstallationToken: jest.fn(),
     createCommitStatus: jest.fn(),
@@ -37,6 +42,7 @@ describe('PrLifecycleHandler', () => {
         PrLifecycleHandler,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: GitHubService, useValue: mockGitHubService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 

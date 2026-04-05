@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 /**
  * PR Review Handler (spec §7)
@@ -19,7 +20,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class PrReviewHandler {
   private readonly logger = new Logger(PrReviewHandler.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private eventEmitter: EventEmitter2,
+  ) {}
 
   /**
    * Main entry point for pull_request_review webhook events
@@ -116,6 +120,7 @@ export class PrReviewHandler {
       this.logger.log(
         `Contribution event emitted: PR_REVIEW_APPROVED(+3) for ${review.user.login}`,
       );
+      this.eventEmitter.emit('contribution.created', { projectId: project.id });
     }
   }
 

@@ -132,6 +132,7 @@ model Project {
   evalStart          DateTime?           @map("eval_start") @db.Date
   evalEnd            DateTime?           @map("eval_end") @db.Date
   lockedAt           DateTime?           @map("locked_at")
+  scoringConfig      Json?               @map("scoring_config")
   createdAt          DateTime            @default(now()) @map("created_at")
   department         Department          @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   members            ProjectMember[]

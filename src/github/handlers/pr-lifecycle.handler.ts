@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubService } from '../github.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 /**
  * PR Lifecycle Handler (spec §5, §6)
@@ -25,6 +26,7 @@ export class PrLifecycleHandler {
   constructor(
     private prisma: PrismaService,
     private githubService: GitHubService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -359,6 +361,8 @@ export class PrLifecycleHandler {
     this.logger.log(
       `Contribution events emitted for task ${task.externalTaskId}: PR_MERGED(+10), TASK_COMPLETED(+5)`,
     );
+
+    this.eventEmitter.emit('contribution.created', { projectId: project.id });
   }
 
   /**

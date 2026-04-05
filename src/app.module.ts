@@ -6,6 +6,8 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { GitHubModule } from './github/github.module';
+import { ScoringModule } from './scoring/scoring.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { GitHubModule } from './github/github.module';
     PrismaModule,
     AuthModule,
     GitHubModule,
+    ScoringModule,
+    EventEmitterModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [AppService],
