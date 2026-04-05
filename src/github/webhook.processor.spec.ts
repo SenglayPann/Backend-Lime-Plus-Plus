@@ -1,3 +1,13 @@
+jest.mock('@octokit/graphql', () => ({
+  graphql: Object.assign(jest.fn(), {
+    defaults: jest.fn().mockReturnValue(jest.fn()),
+  }),
+}));
+
+jest.mock('@octokit/auth-app', () => ({
+  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { WebhookProcessor } from './webhook.processor';
 import { WebhooksService } from './webhooks.service';

@@ -2,6 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { createHmac, timingSafeEqual } from 'crypto';
+import {
+  PrLifecycleHandler,
+  PrReviewHandler,
+  TaskSyncHandler,
+  ProjectMetadataHandler,
+  PushHandler,
+} from './handlers';
 
 export interface WebhookEvent {
   event: string;
@@ -24,6 +31,11 @@ export class WebhooksService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private prLifecycleHandler: PrLifecycleHandler,
+    private prReviewHandler: PrReviewHandler,
+    private taskSyncHandler: TaskSyncHandler,
+    private projectMetadataHandler: ProjectMetadataHandler,
+    private pushHandler: PushHandler,
   ) {}
 
   /**
@@ -91,33 +103,25 @@ export class WebhooksService {
 
   /**
    * Route webhook events to the appropriate handler (spec §4)
-   *
-   * Event Routing Matrix:
-   *   pull_request       → PR Lifecycle Handler (§5, §6)
-   *   pull_request_review → PR Review Handler (§7)
-   *   projects_v2_item   → Task Sync Handler (§8)
-   *   projects_v2        → Project Metadata Handler (§9)
-   *   push               → Commit Metadata Handler (§10)
-   *   ping               → Acknowledge
    */
   async routeEvent(event: WebhookEvent): Promise<void> {
     this.logger.log(`Processing ${event.event} event (delivery: ${event.deliveryId})`);
 
     switch (event.event) {
       case 'pull_request':
-        await this.handlePullRequest(event.payload);
+        await this.prLifecycleHandler.handle(event.payload);
         break;
       case 'pull_request_review':
-        await this.handlePullRequestReview(event.payload);
+        await this.prReviewHandler.handle(event.payload);
         break;
       case 'projects_v2_item':
-        await this.handleProjectItem(event.payload);
+        await this.taskSyncHandler.handle(event.payload);
         break;
       case 'projects_v2':
-        await this.handleProjectMetadata(event.payload);
+        await this.projectMetadataHandler.handle(event.payload);
         break;
       case 'push':
-        await this.handlePush(event.payload);
+        await this.pushHandler.handle(event.payload);
         break;
       case 'ping':
         this.logger.log('Received ping event — webhook is configured correctly');
@@ -125,99 +129,5 @@ export class WebhooksService {
       default:
         this.logger.warn(`Unhandled event type: ${event.event}`);
     }
-  }
-
-  /**
-   * Handle pull_request events (spec §5, §6)
-   *
-   * Processing:
-   *   Extract PR metadata → Parse task ID from title/body →
-   *   Validate task exists & belongs to project →
-   *   Validate PR author == task assignee →
-   *   Persist PR record → If merged → emit contribution event
-   *
-   * Full implementation in Phase 5.
-   */
-  private async handlePullRequest(payload: any): Promise<void> {
-    const { action, pull_request, repository } = payload;
-    this.logger.log(
-      `PR ${action}: #${pull_request.number} "${pull_request.title}" in ${repository.full_name}`,
-    );
-    // Phase 5: task ID parsing, author validation, PR persistence, contribution events
-  }
-
-  /**
-   * Handle pull_request_review events (spec §7)
-   *
-   * Processing:
-   *   Verify reviewer != PR author →
-   *   Persist review record →
-   *   If APPROVED → emit contribution_event →
-   *   Update reviewer score
-   *
-   * Full implementation in Phase 5.
-   */
-  private async handlePullRequestReview(payload: any): Promise<void> {
-    const { action, review, pull_request, repository } = payload;
-    this.logger.log(
-      `Review ${action}: ${review.state} on PR #${pull_request.number} in ${repository.full_name}`,
-    );
-    // Phase 5: reviewer validation, review persistence, contribution events
-  }
-
-  /**
-   * Handle projects_v2_item events (spec §8)
-   *
-   * Processing:
-   *   Extract item & field changes →
-   *   Map to Lime++ task →
-   *   Create or update task →
-   *   Sync status & assignee
-   *
-   * Strict rules:
-   *   - Task ID generated and immutable
-   *   - Assignee change logged in audit_logs
-   *   - Task reassignment after PR opened → FLAG
-   *
-   * Full implementation in Phase 5.
-   */
-  private async handleProjectItem(payload: any): Promise<void> {
-    const { action } = payload;
-    this.logger.log(`Project item ${action}`);
-    // Phase 5: task sync, status mapping, assignee sync
-  }
-
-  /**
-   * Handle projects_v2 events (spec §9)
-   *
-   * Purpose:
-   *   - Sync project title
-   *   - Detect project deletion
-   *   - Handle project archive
-   *
-   * Full implementation in Phase 5.
-   */
-  private async handleProjectMetadata(payload: any): Promise<void> {
-    const { action } = payload;
-    this.logger.log(`Project metadata ${action}`);
-    // Phase 5: project title sync, deletion handling, archive handling
-  }
-
-  /**
-   * Handle push events (spec §10)
-   *
-   * Purpose (supporting evidence only, NOT used for scoring):
-   *   - Attach commit metadata to PRs
-   *   - Timeline visualization
-   *
-   * Full implementation in Phase 5.
-   */
-  private async handlePush(payload: any): Promise<void> {
-    const { ref, repository, commits } = payload;
-    const commitCount = commits?.length ?? 0;
-    this.logger.log(
-      `Push to ${ref} in ${repository.full_name}: ${commitCount} commit(s)`,
-    );
-    // Phase 5: commit metadata persistence, PR linkage (no scoring)
   }
 }

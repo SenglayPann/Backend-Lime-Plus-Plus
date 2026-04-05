@@ -1,8 +1,25 @@
+jest.mock('@octokit/graphql', () => ({
+  graphql: Object.assign(jest.fn(), {
+    defaults: jest.fn().mockReturnValue(jest.fn()),
+  }),
+}));
+
+jest.mock('@octokit/auth-app', () => ({
+  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { WebhooksService } from './webhooks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createHmac } from 'crypto';
+import {
+  PrLifecycleHandler,
+  PrReviewHandler,
+  TaskSyncHandler,
+  ProjectMetadataHandler,
+  PushHandler,
+} from './handlers';
 
 describe('WebhooksService', () => {
   let service: WebhooksService;
@@ -17,11 +34,22 @@ describe('WebhooksService', () => {
     },
   };
 
+  const mockPrLifecycleHandler = { handle: jest.fn() };
+  const mockPrReviewHandler = { handle: jest.fn() };
+  const mockTaskSyncHandler = { handle: jest.fn() };
+  const mockProjectMetadataHandler = { handle: jest.fn() };
+  const mockPushHandler = { handle: jest.fn() };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WebhooksService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: PrLifecycleHandler, useValue: mockPrLifecycleHandler },
+        { provide: PrReviewHandler, useValue: mockPrReviewHandler },
+        { provide: TaskSyncHandler, useValue: mockTaskSyncHandler },
+        { provide: ProjectMetadataHandler, useValue: mockProjectMetadataHandler },
+        { provide: PushHandler, useValue: mockPushHandler },
         {
           provide: ConfigService,
           useValue: {

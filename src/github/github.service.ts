@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { graphql } from '@octokit/graphql';
+import { createAppAuth } from '@octokit/auth-app';
 
 export interface GitHubPR {
   number: number;
@@ -54,6 +55,36 @@ export class GitHubService {
   constructor(private configService: ConfigService) {
     // Will be initialized when an installation token is available
     this.graphqlWithAuth = graphql;
+  }
+
+  /**
+   * Get an installation-scoped access token for a specific GitHub App installation
+   */
+  async getAppInstallationToken(installationId: string): Promise<string | null> {
+    const appId = this.configService.get<string>('GITHUB_APP_ID');
+    const privateKey = this.configService.get<string>('GITHUB_APP_PRIVATE_KEY');
+
+    if (!appId || !privateKey) {
+      this.logger.warn('GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY is missing. Cannot get installation token.');
+      return null;
+    }
+
+    try {
+      const auth = createAppAuth({
+        appId,
+        privateKey: privateKey.replace(/\\n/g, '\n'), // handle nested newlines in env vars
+      });
+
+      const installationAuthentication = await auth({
+        type: 'installation',
+        installationId: parseInt(installationId, 10),
+      });
+
+      return installationAuthentication.token;
+    } catch (error) {
+      this.logger.error(`Failed to authorize GitHub App for installation ${installationId}`, error);
+      return null;
+    }
   }
 
   /**
@@ -239,6 +270,47 @@ export class GitHubService {
     } catch (error) {
       this.logger.error(`Failed to fetch project items for ${projectId}`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Create a commit status check on a PR (spec §5.2)
+   */
+  async createCommitStatus(
+    owner: string,
+    repo: string,
+    sha: string,
+    state: 'error' | 'failure' | 'pending' | 'success',
+    description: string,
+    context: string,
+    installationToken: string,
+  ): Promise<void> {
+    const url = `https://api.github.com/repos/${owner}/${repo}/statuses/${sha}`;
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Bearer ${installationToken}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          state,
+          description,
+          context,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.warn(`Failed to create commit status: ${response.status} ${response.statusText} - ${errorText}`);
+      } else {
+        this.logger.debug(`Commit status created successfully for ${sha} (${context}: ${state})`);
+      }
+    } catch (error) {
+      this.logger.error(`Error creating commit status for ${sha}`, error);
     }
   }
 }

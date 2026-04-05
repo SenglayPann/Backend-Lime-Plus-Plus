@@ -28,6 +28,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.2.5",
+    "@octokit/auth-app": "^8.2.0",
     "@octokit/graphql": "^9.0.3",
     "@octokit/webhooks": "^14.2.0",
     "@prisma/adapter-pg": "^7.3.0",
