@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
 import { CreateProjectDto } from './dto/create-project.dto';
-import { ProjectStatus, AuditAction, Role } from '../generated/prisma/enums';
+import { ProjectStatus, AuditAction, Role } from '../generated/prisma';
 
 @Injectable()
 export class ProjectsService {

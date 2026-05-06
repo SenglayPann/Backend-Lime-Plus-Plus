@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { PrStatus } from '../generated/prisma/enums';
+import { PrStatus } from '../generated/prisma';
 
 @Injectable()
 export class PullRequestsService {

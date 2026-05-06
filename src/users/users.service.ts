@@ -34,6 +34,7 @@ export class UsersService {
       return this.prisma.user.update({
         where: { id: existingUser.id },
         data: {
+          githubUsername: profile.username,
           name: profile.displayName || profile.username,
           email: profile.emails?.[0]?.value,
           avatarUrl: profile.photos?.[0]?.value,
@@ -45,6 +46,7 @@ export class UsersService {
     return this.prisma.user.create({
       data: {
         githubUserId: profile.id,
+        githubUsername: profile.username,
         name: profile.displayName || profile.username,
         email: profile.emails?.[0]?.value,
         avatarUrl: profile.photos?.[0]?.value,

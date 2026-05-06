@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { Parser } from 'json2csv';
+import { ProjectStatus } from '../../generated/prisma';
 
 @Injectable()
 export class ReportsService {
@@ -27,6 +28,17 @@ export class ReportsService {
     
     if (!scoreInfo) throw new NotFoundException('Score data not found');
 
+    // Fetch linked PRs as evidence
+    const pullRequests = await this.prisma.pullRequest.findMany({
+      where: {
+        projectId,
+        authorId: userId,
+        status: 'MERGED'
+      },
+      include: { task: true }
+    });
+
+    const breakdownData = scoreInfo.breakdown as any;
     const reportData = {
       name: scoreInfo.user.name || scoreInfo.user.githubUsername,
       email: scoreInfo.user.email,
@@ -34,11 +46,16 @@ export class ReportsService {
       department: scoreInfo.project.department.name,
       totalScore: scoreInfo.totalScore,
       breakdown: [
-        { name: 'PRs Merged', value: scoreInfo.totalScore * 0.6 }, // Mocking distribution for PDF layout
-        { name: 'Tasks Completed', value: scoreInfo.totalScore * 0.3 },
-        { name: 'Other', value: scoreInfo.totalScore * 0.1 },
+        { name: 'PRs Merged', value: (breakdownData.PR_MERGED || []).length },
+        { name: 'Tasks Completed', value: (breakdownData.TASK_COMPLETED || []).length },
+        { name: 'Reviews Approved', value: (breakdownData.REVIEWS || []).length },
       ],
-      pullRequests: [], // In real app, join with PullRequest table
+      pullRequests: pullRequests.map(pr => ({
+        id: pr.task?.externalTaskId || pr.externalPrId,
+        title: pr.task?.title || 'Unknown Task',
+        score: (breakdownData.PR_MERGED || []).find((p: any) => p.task === (pr.task?.externalTaskId))?.score || 0,
+        url: `https://github.com/${scoreInfo.project.repository}/pull/${pr.externalPrId}`
+      })),
     };
 
     return this.pdfService.generateIndividualReport(reportData);
@@ -58,7 +75,7 @@ export class ReportsService {
     const reportData = {
       name: project.name,
       organization: project.department.organization.name,
-      status: project.isLocked ? 'LOCKED (FINAL)' : 'ACTIVE',
+      status: project.status === ProjectStatus.LOCKED ? 'LOCKED (FINAL)' : 'ACTIVE',
       members: project.contributionScores.map(cs => ({
         name: cs.user.name || cs.user.githubUsername,
         score: cs.totalScore

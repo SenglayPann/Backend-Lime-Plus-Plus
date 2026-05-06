@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { AssignRoleDto } from './dto/assign-role.dto';
 import { Roles } from '../common/decorators/roles.decorator';
-import { Role } from '../generated/prisma/enums';
+import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 

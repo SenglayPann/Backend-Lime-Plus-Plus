@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import * as PDFDocument from 'pdfkit';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class PdfService {
@@ -8,8 +8,8 @@ export class PdfService {
       const doc = new PDFDocument({ margin: 50, size: 'A4' });
       const chunks: Buffer[] = [];
 
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      (doc as any).on('data', (chunk: Buffer) => chunks.push(chunk));
+      (doc as any).on('end', () => resolve(Buffer.concat(chunks)));
 
       // Header
       this.generateHeader(doc, 'Student Contribution Report');
@@ -17,7 +17,7 @@ export class PdfService {
       // Student Info
       doc
         .fontSize(12)
-        .text(`Student: ${data.name}`, { bold: true })
+        .text(`Student: ${data.name}`, { underline: true })
         .text(`Email: ${data.email}`)
         .text(`Organization: ${data.organization}`)
         .text(`Department: ${data.department}`)
@@ -51,14 +51,14 @@ export class PdfService {
       const doc = new PDFDocument({ margin: 50, size: 'A4' });
       const chunks: Buffer[] = [];
 
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      (doc as any).on('data', (chunk: Buffer) => chunks.push(chunk));
+      (doc as any).on('end', () => resolve(Buffer.concat(chunks)));
 
       this.generateHeader(doc, 'Project Completion Report');
 
       doc
         .fontSize(12)
-        .text(`Project: ${data.name}`, { bold: true })
+        .text(`Project: ${data.name}`, { underline: true })
         .text(`Organization: ${data.organization}`)
         .text(`Status: ${data.status}`)
         .moveDown();
