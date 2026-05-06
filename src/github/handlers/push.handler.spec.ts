@@ -5,7 +5,9 @@ jest.mock('@octokit/graphql', () => ({
 }));
 
 jest.mock('@octokit/auth-app', () => ({
-  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+  createAppAuth: jest
+    .fn()
+    .mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -31,9 +33,11 @@ describe('PushHandler', () => {
 
     handler = module.get<PushHandler>(PushHandler);
     jest.clearAllMocks();
-    
+
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
-    loggerDebugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
+    loggerDebugSpy = jest
+      .spyOn(Logger.prototype, 'debug')
+      .mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
   });
 
@@ -47,18 +51,22 @@ describe('PushHandler', () => {
         { id: '123', message: 'First', author: { username: 'u1' } },
         { id: '456', message: 'Second', author: { username: 'u2' } },
       ],
-      sender: { login: 'u1' }
+      sender: { login: 'u1' },
     };
 
     await handler.handle(payload);
 
     // Should find project explicitly
     expect(mockPrismaService.project.findFirst).toHaveBeenCalled();
-    
+
     // Should log commits explicitly
-    expect(loggerDebugSpy).toHaveBeenCalledWith(expect.stringContaining('First'));
-    expect(loggerDebugSpy).toHaveBeenCalledWith(expect.stringContaining('Second'));
-    
+    expect(loggerDebugSpy).toHaveBeenCalledWith(
+      expect.stringContaining('First'),
+    );
+    expect(loggerDebugSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Second'),
+    );
+
     // No writes/updates to DB
     expect(Object.keys(mockPrismaService).length).toBe(1); // Only project mock exists
   });

@@ -10,7 +10,7 @@ export class AuditService {
       where: {
         projectId: projectId || undefined,
         actorId: actorId || undefined,
-        action: action as any || undefined,
+        action: (action as any) || undefined,
       },
       include: {
         actor: true,

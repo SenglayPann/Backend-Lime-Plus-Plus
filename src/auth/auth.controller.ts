@@ -44,11 +44,12 @@ export class AuthController {
   @UseGuards(AuthGuard('github'))
   async githubCallback(@Req() req: any, @Res() res: any) {
     const tokens = await this.authService.login(req.user);
-    
+
     // For development, redirect with tokens in query params
     // In production, you'd set secure HTTP-only cookies or redirect to frontend
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
-    
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+
     res.redirect(
       `${frontendUrl}/auth/callback?accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}&expiresIn=${tokens.expiresIn}`,
     );
@@ -61,11 +62,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refresh(@Body() body: RefreshTokenDto): Promise<TokenResponse> {
     const tokens = await this.authService.refreshToken(body.refreshToken);
-    
+
     if (!tokens) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    
+
     return tokens;
   }
 

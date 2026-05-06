@@ -28,11 +28,15 @@ export class TaskSyncHandler {
     const { action, projects_v2_item, sender } = payload;
 
     if (!projects_v2_item) {
-      this.logger.warn('Invalid projects_v2_item payload: missing required fields');
+      this.logger.warn(
+        'Invalid projects_v2_item payload: missing required fields',
+      );
       return;
     }
 
-    this.logger.log(`Project item ${action}: node_id=${projects_v2_item.node_id}`);
+    this.logger.log(
+      `Project item ${action}: node_id=${projects_v2_item.node_id}`,
+    );
 
     // Find the project by external project ID
     const projectNodeId = projects_v2_item.project_node_id;
@@ -41,7 +45,9 @@ export class TaskSyncHandler {
     });
 
     if (!project) {
-      this.logger.warn(`No project found for GitHub Project node ${projectNodeId}`);
+      this.logger.warn(
+        `No project found for GitHub Project node ${projectNodeId}`,
+      );
       return;
     }
 
@@ -70,7 +76,9 @@ export class TaskSyncHandler {
   ): Promise<void> {
     const contentNodeId = item.content_node_id;
     if (!contentNodeId) {
-      this.logger.debug('Project item has no content node — skipping (draft item)');
+      this.logger.debug(
+        'Project item has no content node — skipping (draft item)',
+      );
       return;
     }
 
@@ -89,14 +97,20 @@ export class TaskSyncHandler {
     });
 
     if (existing) {
-      this.logger.debug(`Task ${externalTaskId} already exists — skipping creation`);
+      this.logger.debug(
+        `Task ${externalTaskId} already exists — skipping creation`,
+      );
       return;
     }
 
     // Find or create the sender as the initial assignee
     // (actual assignee will be synced when the field changes)
     const actor = sender
-      ? await this.findOrCreateUser(String(sender.id), sender.login, sender.avatar_url)
+      ? await this.findOrCreateUser(
+          String(sender.id),
+          sender.login,
+          sender.avatar_url,
+        )
       : null;
 
     if (!actor) {
@@ -139,7 +153,9 @@ export class TaskSyncHandler {
     });
 
     if (!task) {
-      this.logger.warn(`Task ${externalTaskId} not found for edit event — skipping`);
+      this.logger.warn(
+        `Task ${externalTaskId} not found for edit event — skipping`,
+      );
       return;
     }
 
@@ -158,14 +174,20 @@ export class TaskSyncHandler {
           where: { id: task.id },
           data: { status: newStatus },
         });
-        this.logger.log(`Task ${externalTaskId} status updated: ${task.status} → ${newStatus}`);
+        this.logger.log(
+          `Task ${externalTaskId} status updated: ${task.status} → ${newStatus}`,
+        );
       }
     }
 
     // Handle assignee field change
     if (changes.field_value?.field_name === 'Assignees') {
       const actor = sender
-        ? await this.findOrCreateUser(String(sender.id), sender.login, sender.avatar_url)
+        ? await this.findOrCreateUser(
+            String(sender.id),
+            sender.login,
+            sender.avatar_url,
+          )
         : null;
 
       if (actor && actor.id !== task.assigneeId) {
@@ -225,7 +247,9 @@ export class TaskSyncHandler {
     });
 
     if (!task) {
-      this.logger.debug(`Task ${externalTaskId} not found for deletion — already removed`);
+      this.logger.debug(
+        `Task ${externalTaskId} not found for deletion — already removed`,
+      );
       return;
     }
 
@@ -235,7 +259,9 @@ export class TaskSyncHandler {
       data: { status: 'BLOCKED' },
     });
 
-    this.logger.warn(`Task ${externalTaskId} soft-deleted (set to BLOCKED) — item removed from GitHub Project`);
+    this.logger.warn(
+      `Task ${externalTaskId} soft-deleted (set to BLOCKED) — item removed from GitHub Project`,
+    );
   }
 
   /**
@@ -254,7 +280,9 @@ export class TaskSyncHandler {
   /**
    * Map GitHub Project status field values to our TaskStatus enum
    */
-  private mapStatus(statusName: string | undefined): 'TODO' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED' | null {
+  private mapStatus(
+    statusName: string | undefined,
+  ): 'TODO' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED' | null {
     if (!statusName) return null;
 
     switch (statusName.toLowerCase()) {
@@ -290,7 +318,9 @@ export class TaskSyncHandler {
     });
 
     if (!user) {
-      this.logger.log(`Auto-creating user record for GitHub user ${login} (${githubUserId})`);
+      this.logger.log(
+        `Auto-creating user record for GitHub user ${login} (${githubUserId})`,
+      );
       user = await this.prisma.user.create({
         data: {
           githubUserId,

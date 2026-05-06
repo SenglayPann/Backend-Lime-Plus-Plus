@@ -7,9 +7,19 @@ import { ROLES_KEY, Role } from '../decorators/roles.decorator';
  * Higher roles automatically have permissions of lower roles.
  */
 const ROLE_HIERARCHY: Record<Role, Role[]> = {
-  ORGANIZATION_OWNER: ['ORGANIZATION_OWNER', 'ADMIN', 'DEPARTMENT_MANAGER', 'PROJECT_MANAGER', 'PROJECT_MEMBER'],
+  ORGANIZATION_OWNER: [
+    'ORGANIZATION_OWNER',
+    'ADMIN',
+    'DEPARTMENT_MANAGER',
+    'PROJECT_MANAGER',
+    'PROJECT_MEMBER',
+  ],
   ADMIN: ['ADMIN', 'DEPARTMENT_MANAGER', 'PROJECT_MANAGER', 'PROJECT_MEMBER'],
-  DEPARTMENT_MANAGER: ['DEPARTMENT_MANAGER', 'PROJECT_MANAGER', 'PROJECT_MEMBER'],
+  DEPARTMENT_MANAGER: [
+    'DEPARTMENT_MANAGER',
+    'PROJECT_MANAGER',
+    'PROJECT_MEMBER',
+  ],
   PROJECT_MANAGER: ['PROJECT_MANAGER', 'PROJECT_MEMBER'],
   PROJECT_MEMBER: ['PROJECT_MEMBER'],
 };
@@ -30,14 +40,14 @@ export class RolesGuard implements CanActivate {
     }
 
     const { user } = context.switchToHttp().getRequest();
-    
+
     if (!user || !user.roles) {
       return false;
     }
 
     // Check if user has any of the required roles (considering hierarchy)
-    return requiredRoles.some((requiredRole) => 
-      this.hasRoleWithHierarchy(user.roles, requiredRole)
+    return requiredRoles.some((requiredRole) =>
+      this.hasRoleWithHierarchy(user.roles, requiredRole),
     );
   }
 

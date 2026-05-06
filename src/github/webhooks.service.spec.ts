@@ -5,7 +5,9 @@ jest.mock('@octokit/graphql', () => ({
 }));
 
 jest.mock('@octokit/auth-app', () => ({
-  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+  createAppAuth: jest
+    .fn()
+    .mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -48,7 +50,10 @@ describe('WebhooksService', () => {
         { provide: PrLifecycleHandler, useValue: mockPrLifecycleHandler },
         { provide: PrReviewHandler, useValue: mockPrReviewHandler },
         { provide: TaskSyncHandler, useValue: mockTaskSyncHandler },
-        { provide: ProjectMetadataHandler, useValue: mockProjectMetadataHandler },
+        {
+          provide: ProjectMetadataHandler,
+          useValue: mockProjectMetadataHandler,
+        },
         { provide: PushHandler, useValue: mockPushHandler },
         {
           provide: ConfigService,
@@ -72,7 +77,8 @@ describe('WebhooksService', () => {
     it('should return true for a valid signature', () => {
       const payload = '{"action":"opened"}';
       const sig =
-        'sha256=' + createHmac('sha256', webhookSecret).update(payload).digest('hex');
+        'sha256=' +
+        createHmac('sha256', webhookSecret).update(payload).digest('hex');
       expect(service.verifySignature(payload, sig)).toBe(true);
     });
 
@@ -88,7 +94,8 @@ describe('WebhooksService', () => {
       const original = '{"action":"opened"}';
       const tampered = '{"action":"closed"}';
       const sig =
-        'sha256=' + createHmac('sha256', webhookSecret).update(original).digest('hex');
+        'sha256=' +
+        createHmac('sha256', webhookSecret).update(original).digest('hex');
       expect(service.verifySignature(tampered, sig)).toBe(false);
     });
   });
@@ -102,9 +109,11 @@ describe('WebhooksService', () => {
         deliveryId: 'abc-123',
       });
       expect(await service.isDuplicate('abc-123')).toBe(true);
-      expect(mockPrismaService.webhookDelivery.findUnique).toHaveBeenCalledWith({
-        where: { deliveryId: 'abc-123' },
-      });
+      expect(mockPrismaService.webhookDelivery.findUnique).toHaveBeenCalledWith(
+        {
+          where: { deliveryId: 'abc-123' },
+        },
+      );
     });
 
     it('should return false if delivery does not exist', async () => {

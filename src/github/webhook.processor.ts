@@ -22,7 +22,9 @@ export class WebhookProcessor extends WorkerHost {
   async process(job: Job<WebhookEvent>): Promise<void> {
     const { event, deliveryId, payload } = job.data;
 
-    this.logger.log(`Processing webhook job: ${event} (delivery: ${deliveryId})`);
+    this.logger.log(
+      `Processing webhook job: ${event} (delivery: ${deliveryId})`,
+    );
 
     try {
       await this.webhooksService.routeEvent({ event, deliveryId, payload });
@@ -40,7 +42,7 @@ export class WebhookProcessor extends WorkerHost {
 
     if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
       this.logger.error(
-        `[DLQ] Webhook ${job.data.deliveryId} moved to DLQ after ${job.attemptsMade} attempts: ${error.message}`
+        `[DLQ] Webhook ${job.data.deliveryId} moved to DLQ after ${job.attemptsMade} attempts: ${error.message}`,
       );
       // In Phase 7: emit alert to admin dashboard
     }

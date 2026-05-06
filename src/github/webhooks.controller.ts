@@ -51,7 +51,9 @@ export class WebhooksController {
     // 2. Get raw body for signature verification
     const rawBody: Buffer | undefined = req.rawBody;
     if (!rawBody) {
-      throw new BadRequestException('Raw body not available for signature verification');
+      throw new BadRequestException(
+        'Raw body not available for signature verification',
+      );
     }
 
     // 3. Reject if payload size exceeds limit (spec §3.1)
@@ -64,7 +66,10 @@ export class WebhooksController {
     const rawBodyString = rawBody.toString('utf8');
 
     // 4. Verify HMAC signature (spec §3.1)
-    const isValid = this.webhooksService.verifySignature(rawBodyString, signature);
+    const isValid = this.webhooksService.verifySignature(
+      rawBodyString,
+      signature,
+    );
     if (!isValid) {
       this.logger.warn(`Invalid webhook signature for delivery ${deliveryId}`);
       throw new UnauthorizedException('Invalid webhook signature');
@@ -88,7 +93,9 @@ export class WebhooksController {
       payload,
     });
 
-    this.logger.log(`Webhook ${event} (delivery: ${deliveryId}) enqueued for processing`);
+    this.logger.log(
+      `Webhook ${event} (delivery: ${deliveryId}) enqueued for processing`,
+    );
     return { status: 'accepted', deliveryId };
   }
 }

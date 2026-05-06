@@ -10,7 +10,9 @@ jest.mock('@octokit/graphql', () => ({
 
 // Mock @octokit/auth-app
 jest.mock('@octokit/auth-app', () => ({
-  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+  createAppAuth: jest
+    .fn()
+    .mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
 }));
 
 import { GitHubService } from './github.service';

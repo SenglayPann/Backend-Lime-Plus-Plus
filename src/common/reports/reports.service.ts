@@ -11,21 +11,24 @@ export class ReportsService {
     private pdfService: PdfService,
   ) {}
 
-  async exportIndividualPdf(projectId: string, userId: string): Promise<Buffer> {
+  async exportIndividualPdf(
+    projectId: string,
+    userId: string,
+  ): Promise<Buffer> {
     const scoreInfo = await this.prisma.contributionScore.findUnique({
       where: { projectId_userId: { projectId, userId } },
-      include: { 
-        user: true, 
-        project: { 
-          include: { 
-            department: { 
-              include: { organization: true } 
-            } 
-          } 
-        } 
+      include: {
+        user: true,
+        project: {
+          include: {
+            department: {
+              include: { organization: true },
+            },
+          },
+        },
       },
     });
-    
+
     if (!scoreInfo) throw new NotFoundException('Score data not found');
 
     // Fetch linked PRs as evidence
@@ -33,9 +36,9 @@ export class ReportsService {
       where: {
         projectId,
         authorId: userId,
-        status: 'MERGED'
+        status: 'MERGED',
       },
-      include: { task: true }
+      include: { task: true },
     });
 
     const breakdownData = scoreInfo.breakdown as any;
@@ -47,14 +50,23 @@ export class ReportsService {
       totalScore: scoreInfo.totalScore,
       breakdown: [
         { name: 'PRs Merged', value: (breakdownData.PR_MERGED || []).length },
-        { name: 'Tasks Completed', value: (breakdownData.TASK_COMPLETED || []).length },
-        { name: 'Reviews Approved', value: (breakdownData.REVIEWS || []).length },
+        {
+          name: 'Tasks Completed',
+          value: (breakdownData.TASK_COMPLETED || []).length,
+        },
+        {
+          name: 'Reviews Approved',
+          value: (breakdownData.REVIEWS || []).length,
+        },
       ],
-      pullRequests: pullRequests.map(pr => ({
+      pullRequests: pullRequests.map((pr) => ({
         id: pr.task?.externalTaskId || pr.externalPrId,
         title: pr.task?.title || 'Unknown Task',
-        score: (breakdownData.PR_MERGED || []).find((p: any) => p.task === (pr.task?.externalTaskId))?.score || 0,
-        url: `https://github.com/${scoreInfo.project.repository}/pull/${pr.externalPrId}`
+        score:
+          (breakdownData.PR_MERGED || []).find(
+            (p: any) => p.task === pr.task?.externalTaskId,
+          )?.score || 0,
+        url: `https://github.com/${scoreInfo.project.repository}/pull/${pr.externalPrId}`,
       })),
     };
 
@@ -64,10 +76,13 @@ export class ReportsService {
   async exportProjectPdf(projectId: string): Promise<Buffer> {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { 
+      include: {
         department: { include: { organization: true } },
-        contributionScores: { include: { user: true }, orderBy: { totalScore: 'desc' } }
-      }
+        contributionScores: {
+          include: { user: true },
+          orderBy: { totalScore: 'desc' },
+        },
+      },
     });
 
     if (!project) throw new NotFoundException('Project not found');
@@ -75,11 +90,12 @@ export class ReportsService {
     const reportData = {
       name: project.name,
       organization: project.department.organization.name,
-      status: project.status === ProjectStatus.LOCKED ? 'LOCKED (FINAL)' : 'ACTIVE',
-      members: project.contributionScores.map(cs => ({
+      status:
+        project.status === ProjectStatus.LOCKED ? 'LOCKED (FINAL)' : 'ACTIVE',
+      members: project.contributionScores.map((cs) => ({
         name: cs.user.name || cs.user.githubUsername,
-        score: cs.totalScore
-      }))
+        score: cs.totalScore,
+      })),
     };
 
     return this.pdfService.generateProjectReport(reportData);
@@ -92,11 +108,11 @@ export class ReportsService {
       orderBy: { totalScore: 'desc' },
     });
 
-    const data = scores.map(s => ({
+    const data = scores.map((s) => ({
       githubUsername: s.user.githubUsername,
       name: s.user.name,
       totalScore: s.totalScore,
-      lastUpdated: s.updatedAt
+      lastUpdated: s.updatedAt,
     }));
 
     const parser = new Parser();

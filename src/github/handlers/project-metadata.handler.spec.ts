@@ -5,7 +5,9 @@ jest.mock('@octokit/graphql', () => ({
 }));
 
 jest.mock('@octokit/auth-app', () => ({
-  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+  createAppAuth: jest
+    .fn()
+    .mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -32,7 +34,7 @@ describe('ProjectMetadataHandler', () => {
 
     handler = module.get<ProjectMetadataHandler>(ProjectMetadataHandler);
     jest.clearAllMocks();
-    
+
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
@@ -44,15 +46,18 @@ describe('ProjectMetadataHandler', () => {
   };
 
   it('should sync project title on edit', async () => {
-    mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1', name: 'Old Title' });
+    mockPrismaService.project.findFirst.mockResolvedValue({
+      id: 'p1',
+      name: 'Old Title',
+    });
 
     const payload = {
       ...basePayload,
       action: 'edited',
-      projects_v2: { 
-        ...basePayload.projects_v2, 
+      projects_v2: {
+        ...basePayload.projects_v2,
         title: 'New Title',
-        changes: { title: { to: 'New Title' } }
+        changes: { title: { to: 'New Title' } },
       },
     };
 
@@ -60,24 +65,29 @@ describe('ProjectMetadataHandler', () => {
 
     expect(mockPrismaService.project.update).toHaveBeenCalledWith({
       where: { id: 'p1' },
-      data: { name: 'New Title' }
+      data: { name: 'New Title' },
     });
   });
 
   it('should set project to ARCHIVED on delete', async () => {
-    mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1', status: 'ACTIVE' });
+    mockPrismaService.project.findFirst.mockResolvedValue({
+      id: 'p1',
+      status: 'ACTIVE',
+    });
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u1' });
 
     await handler.handle({ ...basePayload, action: 'deleted' });
 
     expect(mockPrismaService.project.update).toHaveBeenCalledWith({
       where: { id: 'p1' },
-      data: { status: 'ARCHIVED' }
+      data: { status: 'ARCHIVED' },
     });
-    
-    expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ action: 'PROJECT_LOCK' })
-    }));
+
+    expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'PROJECT_LOCK' }),
+      }),
+    );
   });
 
   it('should set project to LOCKED on close', async () => {
@@ -88,11 +98,13 @@ describe('ProjectMetadataHandler', () => {
 
     expect(mockPrismaService.project.update).toHaveBeenCalledWith({
       where: { id: 'p1' },
-      data: expect.objectContaining({ status: 'LOCKED' })
+      data: expect.objectContaining({ status: 'LOCKED' }),
     });
 
-    expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ action: 'PROJECT_LOCK' })
-    }));
+    expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'PROJECT_LOCK' }),
+      }),
+    );
   });
 });

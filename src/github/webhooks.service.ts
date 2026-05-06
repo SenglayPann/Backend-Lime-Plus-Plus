@@ -46,7 +46,9 @@ export class WebhooksService {
     const secret = this.configService.get<string>('GITHUB_WEBHOOK_SECRET');
 
     if (!secret) {
-      this.logger.warn('GITHUB_WEBHOOK_SECRET not configured, skipping verification');
+      this.logger.warn(
+        'GITHUB_WEBHOOK_SECRET not configured, skipping verification',
+      );
       return true; // Allow in dev if no secret configured
     }
 
@@ -105,7 +107,9 @@ export class WebhooksService {
    * Route webhook events to the appropriate handler (spec §4)
    */
   async routeEvent(event: WebhookEvent): Promise<void> {
-    this.logger.log(`Processing ${event.event} event (delivery: ${event.deliveryId})`);
+    this.logger.log(
+      `Processing ${event.event} event (delivery: ${event.deliveryId})`,
+    );
 
     switch (event.event) {
       case 'pull_request':
@@ -124,7 +128,9 @@ export class WebhooksService {
         await this.pushHandler.handle(event.payload);
         break;
       case 'ping':
-        this.logger.log('Received ping event — webhook is configured correctly');
+        this.logger.log(
+          'Received ping event — webhook is configured correctly',
+        );
         break;
       default:
         this.logger.warn(`Unhandled event type: ${event.event}`);

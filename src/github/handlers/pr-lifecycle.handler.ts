@@ -50,7 +50,9 @@ export class PrLifecycleHandler {
     });
 
     if (!project) {
-      this.logger.warn(`No project found for repository ${repository.full_name}`);
+      this.logger.warn(
+        `No project found for repository ${repository.full_name}`,
+      );
       return;
     }
 
@@ -107,7 +109,9 @@ export class PrLifecycleHandler {
     let statusMessage = '';
 
     if (!taskId) {
-      this.logger.warn(`No task ID found in PR #${pr.number} title/body — marked INVALID`);
+      this.logger.warn(
+        `No task ID found in PR #${pr.number} title/body — marked INVALID`,
+      );
       validationStatus = 'INVALID';
       statusMessage = 'No task ID (e.g. TASK-42) found in PR title or body';
     } else {
@@ -122,7 +126,9 @@ export class PrLifecycleHandler {
       });
 
       if (!task) {
-        this.logger.warn(`Task ${taskId} not found for project ${project.id} — PR marked INVALID`);
+        this.logger.warn(
+          `Task ${taskId} not found for project ${project.id} — PR marked INVALID`,
+        );
         validationStatus = 'INVALID';
         statusMessage = `Task ${taskId} not found in this project`;
       } else if (task.assignee.githubUserId !== String(pr.user.id)) {
@@ -182,13 +188,20 @@ export class PrLifecycleHandler {
     );
 
     // Apply GitHub Commit Status Check
-    if (installation?.id && pr.head?.sha && repository?.owner?.login && repository?.name) {
-      const token = await this.githubService.getAppInstallationToken(String(installation.id));
+    if (
+      installation?.id &&
+      pr.head?.sha &&
+      repository?.owner?.login &&
+      repository?.name
+    ) {
+      const token = await this.githubService.getAppInstallationToken(
+        String(installation.id),
+      );
       if (token) {
         const stateMapping = {
-          'VALID': 'success',
-          'INVALID': 'failure',
-          'FLAGGED': 'failure', // Assignee mismatch blocks merge credit visually
+          VALID: 'success',
+          INVALID: 'failure',
+          FLAGGED: 'failure', // Assignee mismatch blocks merge credit visually
         } as const;
 
         await this.githubService.createCommitStatus(
@@ -198,7 +211,7 @@ export class PrLifecycleHandler {
           stateMapping[validationStatus as keyof typeof stateMapping],
           statusMessage,
           'Lime++ Validation',
-          token
+          token,
         );
       }
     }
@@ -282,7 +295,11 @@ export class PrLifecycleHandler {
    *   - Only first merged PR per task emits contribution events
    *   - Task completion timestamp is immutable
    */
-  private async handleMerge(project: any, existingPr: any, prPayload: any): Promise<void> {
+  private async handleMerge(
+    project: any,
+    existingPr: any,
+    prPayload: any,
+  ): Promise<void> {
     // Update PR status to MERGED
     await this.prisma.pullRequest.update({
       where: { id: existingPr.id },
@@ -293,7 +310,9 @@ export class PrLifecycleHandler {
     });
 
     if (!existingPr.taskId || !existingPr.task) {
-      this.logger.warn(`PR #${prPayload.number} merged but has no linked task — no contribution events`);
+      this.logger.warn(
+        `PR #${prPayload.number} merged but has no linked task — no contribution events`,
+      );
       return;
     }
 
@@ -314,7 +333,11 @@ export class PrLifecycleHandler {
     }
 
     // First merged PR for this task → emit contribution events
-    await this.emitMergeContributionEvents(project, existingPr.task, existingPr.authorId);
+    await this.emitMergeContributionEvents(
+      project,
+      existingPr.task,
+      existingPr.authorId,
+    );
   }
 
   /**
@@ -398,7 +421,9 @@ export class PrLifecycleHandler {
     });
 
     if (!user) {
-      this.logger.log(`Auto-creating user record for GitHub user ${login} (${githubUserId})`);
+      this.logger.log(
+        `Auto-creating user record for GitHub user ${login} (${githubUserId})`,
+      );
       user = await this.prisma.user.create({
         data: {
           githubUserId,

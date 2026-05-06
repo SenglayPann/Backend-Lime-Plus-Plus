@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request, NotFoundException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+  NotFoundException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ScoringService } from './scoring.service';
 import { ScoreOverrideDto } from './dto/score-override.dto';
@@ -16,7 +25,9 @@ export class ScoringController {
 
   @Get('projects/:projectId/users/:userId/contribution')
   @Roles(Role.PROJECT_MEMBER)
-  @ApiOperation({ summary: 'Get user contribution breakdown for a project (Project Members+)' })
+  @ApiOperation({
+    summary: 'Get user contribution breakdown for a project (Project Members+)',
+  })
   async getContribution(
     @Param('projectId') projectId: string,
     @Param('userId') userId: string,

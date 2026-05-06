@@ -5,7 +5,9 @@ jest.mock('@octokit/graphql', () => ({
 }));
 
 jest.mock('@octokit/auth-app', () => ({
-  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+  createAppAuth: jest
+    .fn()
+    .mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';

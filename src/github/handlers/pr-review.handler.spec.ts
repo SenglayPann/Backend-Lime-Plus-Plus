@@ -5,7 +5,9 @@ jest.mock('@octokit/graphql', () => ({
 }));
 
 jest.mock('@octokit/auth-app', () => ({
-  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+  createAppAuth: jest
+    .fn()
+    .mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -40,7 +42,7 @@ describe('PrReviewHandler', () => {
 
     handler = module.get<PrReviewHandler>(PrReviewHandler);
     jest.clearAllMocks();
-    
+
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
@@ -78,13 +80,17 @@ describe('PrReviewHandler', () => {
 
     await handler.handle(validPayload);
 
-    expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ state: 'APPROVED' })
-    }));
-    
-    expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ type: 'PR_REVIEW_APPROVED', score: 3 })
-    }));
+    expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: 'APPROVED' }),
+      }),
+    );
+
+    expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: 'PR_REVIEW_APPROVED', score: 3 }),
+      }),
+    );
   });
 
   it('should NOT emit contribution for commented reviews', async () => {
@@ -97,9 +103,11 @@ describe('PrReviewHandler', () => {
 
     await handler.handle(payload);
 
-    expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ state: 'COMMENTED' })
-    }));
+    expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ state: 'COMMENTED' }),
+      }),
+    );
 
     expect(mockPrismaService.contributionEvent.create).not.toHaveBeenCalled();
   });

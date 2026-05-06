@@ -1,5 +1,19 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -48,13 +62,14 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Manual sync tasks from GitHub (Project Manager+)' })
   async syncTasks(@Param('id') id: string, @Request() req: any) {
     // In a real app, the accessToken would come from the user's session or GitHub App token
-    // For now, we'll assume it's passed or available. 
+    // For now, we'll assume it's passed or available.
     // We might need to fetch it from the database or GitHubService.
-    
-    // Note: The spec says this expects an accessToken. 
+
+    // Note: The spec says this expects an accessToken.
     // If not provided in body, we might need to get it from the user's OAuth record.
-    const accessToken = req.headers['x-github-token'] || process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
-    
+    const accessToken =
+      req.headers['x-github-token'] || process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+
     return this.projectsService.syncTasks(id, accessToken, req.user.id);
   }
 }

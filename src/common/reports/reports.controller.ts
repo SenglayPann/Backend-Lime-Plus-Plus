@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Param, UseGuards, StreamableFile, Header, Response } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  StreamableFile,
+  Header,
+  Response,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { Roles } from '../decorators/roles.decorator';
@@ -23,7 +33,10 @@ export class ReportsController {
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER, Role.ADMIN)
   @ApiOperation({ summary: 'Generate individual report (Spec v1)' })
   async generateIndividualReport(@Body() dto: ReportDto) {
-    const buffer = await this.reportsService.exportIndividualPdf(dto.project_id, dto.user_id!);
+    const buffer = await this.reportsService.exportIndividualPdf(
+      dto.project_id,
+      dto.user_id!,
+    );
     return new StreamableFile(buffer, {
       type: 'application/pdf',
       disposition: `attachment; filename="report_${dto.user_id}.pdf"`,
@@ -49,9 +62,17 @@ export class ReportsController {
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
   @Header('Content-Type', 'application/pdf')
   @Header('Content-Disposition', 'attachment; filename="individual_report.pdf"')
-  @ApiOperation({ summary: 'Export individual performance report as PDF (Legacy GET)' })
-  async individualPdf(@Param('projectId') projectId: string, @Param('userId') userId: string) {
-    const buffer = await this.reportsService.exportIndividualPdf(projectId, userId);
+  @ApiOperation({
+    summary: 'Export individual performance report as PDF (Legacy GET)',
+  })
+  async individualPdf(
+    @Param('projectId') projectId: string,
+    @Param('userId') userId: string,
+  ) {
+    const buffer = await this.reportsService.exportIndividualPdf(
+      projectId,
+      userId,
+    );
     return new StreamableFile(buffer);
   }
 
@@ -59,7 +80,9 @@ export class ReportsController {
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
   @Header('Content-Type', 'application/pdf')
   @Header('Content-Disposition', 'attachment; filename="project_report.pdf"')
-  @ApiOperation({ summary: 'Export project-wide performance report as PDF (Legacy GET)' })
+  @ApiOperation({
+    summary: 'Export project-wide performance report as PDF (Legacy GET)',
+  })
   async projectPdf(@Param('projectId') projectId: string) {
     const buffer = await this.reportsService.exportProjectPdf(projectId);
     return new StreamableFile(buffer);
@@ -69,7 +92,9 @@ export class ReportsController {
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
   @Header('Content-Type', 'text/csv')
   @Header('Content-Disposition', 'attachment; filename="project_scores.csv"')
-  @ApiOperation({ summary: 'Export project-wide performance scores as CSV (Legacy GET)' })
+  @ApiOperation({
+    summary: 'Export project-wide performance scores as CSV (Legacy GET)',
+  })
   async projectCsv(@Param('projectId') projectId: string) {
     return this.reportsService.exportProjectCsv(projectId);
   }

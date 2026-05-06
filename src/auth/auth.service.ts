@@ -57,7 +57,7 @@ export class AuthService {
   async refreshToken(refreshToken: string): Promise<TokenResponse | null> {
     try {
       const payload = this.jwtService.verify(refreshToken);
-      
+
       if (payload.type !== 'refresh') {
         return null;
       }
@@ -110,11 +110,16 @@ export class AuthService {
     const unit = match[2];
 
     switch (unit) {
-      case 's': return value;
-      case 'm': return value * 60;
-      case 'h': return value * 60 * 60;
-      case 'd': return value * 60 * 60 * 24;
-      default: return 900;
+      case 's':
+        return value;
+      case 'm':
+        return value * 60;
+      case 'h':
+        return value * 60 * 60;
+      case 'd':
+        return value * 60 * 60 * 24;
+      default:
+        return 900;
     }
   }
 }

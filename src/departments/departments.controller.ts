@@ -1,5 +1,18 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { DepartmentsService } from './departments.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -24,7 +37,11 @@ export class DepartmentsController {
   @Get()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'List all departments' })
-  @ApiQuery({ name: 'organization_id', required: false, description: 'Filter by organization ID' })
+  @ApiQuery({
+    name: 'organization_id',
+    required: false,
+    description: 'Filter by organization ID',
+  })
   async findAll(@Query('organization_id') organizationId?: string) {
     return this.departmentsService.findAll(organizationId);
   }

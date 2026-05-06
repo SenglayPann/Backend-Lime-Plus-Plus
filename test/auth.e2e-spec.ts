@@ -116,7 +116,10 @@ describe('Auth Endpoints (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(HttpStatus.OK)
         .expect((res) => {
-          expect(res.body.data).toHaveProperty('message', 'Logged out successfully');
+          expect(res.body.data).toHaveProperty(
+            'message',
+            'Logged out successfully',
+          );
         });
     });
 
@@ -135,7 +138,6 @@ describe('Auth Endpoints (e2e)', () => {
   });
 
   describe('GET /api/v1/auth/me', () => {
-
     it('should return user profile when authenticated', () => {
       return request(app.getHttpServer())
         .get('/api/v1/auth/me')

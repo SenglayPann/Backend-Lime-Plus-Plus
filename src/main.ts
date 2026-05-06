@@ -45,7 +45,11 @@ async function bootstrap() {
   });
 
   await app.listen(process.env.PORT ?? 3001);
-  console.log(`🚀 Backend running on http://localhost:${process.env.PORT ?? 3001}/api/v1`);
-  console.log(`📑 Swagger docs available at http://localhost:${process.env.PORT ?? 3001}/api/docs`);
+  console.log(
+    `🚀 Backend running on http://localhost:${process.env.PORT ?? 3001}/api/v1`,
+  );
+  console.log(
+    `📑 Swagger docs available at http://localhost:${process.env.PORT ?? 3001}/api/docs`,
+  );
 }
 bootstrap();

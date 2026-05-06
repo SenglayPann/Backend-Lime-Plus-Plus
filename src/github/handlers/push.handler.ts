@@ -46,7 +46,9 @@ export class PushHandler {
     });
 
     if (!project) {
-      this.logger.debug(`No project found for repository ${repository.full_name} — push logged but not tracked`);
+      this.logger.debug(
+        `No project found for repository ${repository.full_name} — push logged but not tracked`,
+      );
       return;
     }
 

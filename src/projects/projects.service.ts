@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -18,8 +22,12 @@ export class ProjectsService {
         departmentId: dto.department_id,
         repository: dto.repository,
         externalProjectId: dto.github_project_id,
-        evalStart: dto.evaluation_window?.start ? new Date(dto.evaluation_window.start) : null,
-        evalEnd: dto.evaluation_window?.end ? new Date(dto.evaluation_window.end) : null,
+        evalStart: dto.evaluation_window?.start
+          ? new Date(dto.evaluation_window.start)
+          : null,
+        evalEnd: dto.evaluation_window?.end
+          ? new Date(dto.evaluation_window.end)
+          : null,
       },
     });
   }
@@ -47,7 +55,7 @@ export class ProjectsService {
 
   async lockProject(id: string, actorId: string) {
     const project = await this.findOne(id);
-    
+
     if (project.status === ProjectStatus.LOCKED) {
       throw new ConflictException('Project is already locked');
     }
@@ -76,21 +84,26 @@ export class ProjectsService {
 
   async syncTasks(id: string, accessToken: string, actorId: string) {
     const project = await this.findOne(id);
-    
+
     if (!project.externalProjectId) {
       throw new ConflictException('Project is not linked to a GitHub Project');
     }
 
-    const items = await this.githubService.getProjectItems(project.externalProjectId, accessToken);
-    
+    const items = await this.githubService.getProjectItems(
+      project.externalProjectId,
+      accessToken,
+    );
+
     const results = await Promise.all(
       items.map(async (item) => {
         // Skip items without a title (e.g. empty rows)
         if (!item.content?.title) return null;
 
         // Try to find status from field values
-        const statusValue = item.fieldValues.nodes.find(n => n.name === 'Status')?.name;
-        
+        const statusValue = item.fieldValues.nodes.find(
+          (n) => n.name === 'Status',
+        )?.name;
+
         // Find assignee
         const assigneeLogin = item.content.assignees?.nodes[0]?.login;
         let assigneeId = null;
@@ -104,7 +117,7 @@ export class ProjectsService {
 
         // Only upsert if we have an assignee (or handle null assignee according to business rules)
         // For sync, we might just create them even without assignee and let PM assign them later
-        
+
         // Map GitHub status to TaskStatus
         let taskStatus = 'TODO';
         if (statusValue === 'In Progress') taskStatus = 'IN_PROGRESS';
@@ -130,11 +143,11 @@ export class ProjectsService {
             assigneeId: assigneeId || 'unassigned', // We might need a placeholder or allow null
           },
         });
-      })
+      }),
     );
 
     return {
-      syncedCount: results.filter(r => r !== null).length,
+      syncedCount: results.filter((r) => r !== null).length,
     };
   }
 }

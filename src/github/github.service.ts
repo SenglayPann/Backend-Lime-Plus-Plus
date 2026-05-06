@@ -60,12 +60,16 @@ export class GitHubService {
   /**
    * Get an installation-scoped access token for a specific GitHub App installation
    */
-  async getAppInstallationToken(installationId: string): Promise<string | null> {
+  async getAppInstallationToken(
+    installationId: string,
+  ): Promise<string | null> {
     const appId = this.configService.get<string>('GITHUB_APP_ID');
     const privateKey = this.configService.get<string>('GITHUB_APP_PRIVATE_KEY');
 
     if (!appId || !privateKey) {
-      this.logger.warn('GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY is missing. Cannot get installation token.');
+      this.logger.warn(
+        'GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY is missing. Cannot get installation token.',
+      );
       return null;
     }
 
@@ -82,7 +86,10 @@ export class GitHubService {
 
       return installationAuthentication.token;
     } catch (error) {
-      this.logger.error(`Failed to authorize GitHub App for installation ${installationId}`, error);
+      this.logger.error(
+        `Failed to authorize GitHub App for installation ${installationId}`,
+        error,
+      );
       return null;
     }
   }
@@ -202,7 +209,10 @@ export class GitHubService {
       const response: any = await client(query, { owner, repo, number });
       return response.repository.pullRequest;
     } catch (error) {
-      this.logger.error(`Failed to fetch PR #${number} for ${owner}/${repo}`, error);
+      this.logger.error(
+        `Failed to fetch PR #${number} for ${owner}/${repo}`,
+        error,
+      );
       throw error;
     }
   }
@@ -268,7 +278,10 @@ export class GitHubService {
       const response: any = await client(query, { projectId, first });
       return response.node.items.nodes;
     } catch (error) {
-      this.logger.error(`Failed to fetch project items for ${projectId}`, error);
+      this.logger.error(
+        `Failed to fetch project items for ${projectId}`,
+        error,
+      );
       throw error;
     }
   }
@@ -286,13 +299,13 @@ export class GitHubService {
     installationToken: string,
   ): Promise<void> {
     const url = `https://api.github.com/repos/${owner}/${repo}/statuses/${sha}`;
-    
+
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Accept': 'application/vnd.github.v3+json',
-          'Authorization': `Bearer ${installationToken}`,
+          Accept: 'application/vnd.github.v3+json',
+          Authorization: `Bearer ${installationToken}`,
           'X-GitHub-Api-Version': '2022-11-28',
           'Content-Type': 'application/json',
         },
@@ -305,9 +318,13 @@ export class GitHubService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        this.logger.warn(`Failed to create commit status: ${response.status} ${response.statusText} - ${errorText}`);
+        this.logger.warn(
+          `Failed to create commit status: ${response.status} ${response.statusText} - ${errorText}`,
+        );
       } else {
-        this.logger.debug(`Commit status created successfully for ${sha} (${context}: ${state})`);
+        this.logger.debug(
+          `Commit status created successfully for ${sha} (${context}: ${state})`,
+        );
       }
     } catch (error) {
       this.logger.error(`Error creating commit status for ${sha}`, error);

@@ -28,7 +28,7 @@ export class UsersService {
 
   async findOrCreateFromGitHub(profile: GitHubProfile) {
     const existingUser = await this.findByGitHubId(profile.id);
-    
+
     if (existingUser) {
       // Update user info from GitHub
       return this.prisma.user.update({
@@ -65,20 +65,25 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
-    
+
     if (!user) return null;
-    
+
     const roles = await this.prisma.userRole.findMany({
       where: { userId },
     });
-    
+
     return {
       ...user,
       roles,
     };
   }
 
-  async assignRole(userId: string, role: string, organizationId?: string, departmentId?: string) {
+  async assignRole(
+    userId: string,
+    role: string,
+    organizationId?: string,
+    departmentId?: string,
+  ) {
     return this.prisma.userRole.create({
       data: {
         userId,

@@ -12,7 +12,7 @@ export class TasksService {
       where: {
         projectId: projectId || undefined,
         assigneeId: assigneeId || undefined,
-        status: status as any || undefined,
+        status: (status as any) || undefined,
       },
       include: {
         project: true,
@@ -33,7 +33,7 @@ export class TasksService {
 
   async assignTask(id: string, assigneeId: string) {
     const task = await this.findOne(id);
-    
+
     return this.prisma.task.update({
       where: { id },
       data: { assigneeId },

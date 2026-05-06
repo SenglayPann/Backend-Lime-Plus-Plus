@@ -6,17 +6,17 @@ export const DEFAULT_SCORING_CONFIG = {
   weights: {
     PR_MERGED: 10,
     TASK_COMPLETED: 5,
-    PR_REVIEW_APPROVED: 3
+    PR_REVIEW_APPROVED: 3,
   },
   multipliers: {
     difficulty: { LOW: 1.0, MEDIUM: 1.2, HIGH: 1.5 },
-    timeliness: { early: 0.10, onTime: 0, late: -0.20 }
+    timeliness: { early: 0.1, onTime: 0, late: -0.2 },
   },
   caps: {
     maxScorePerTask: 20,
     maxReviewScorePerPR: 5,
-    maxReviewScorePercent: 0.20
-  }
+    maxReviewScorePercent: 0.2,
+  },
 };
 
 @Injectable()
@@ -30,7 +30,7 @@ export class ScoringService {
       where: { id: projectId },
       include: {
         contributionEvents: true,
-      }
+      },
     });
 
     if (!project) return;
@@ -39,23 +39,27 @@ export class ScoringService {
       return;
     }
 
-    const config = (project as any).scoringConfig ? (project as any).scoringConfig : DEFAULT_SCORING_CONFIG;
-    
+    const config = (project as any).scoringConfig
+      ? (project as any).scoringConfig
+      : DEFAULT_SCORING_CONFIG;
+
     // Fetch all related tasks to evaluate difficulty/timeliness
-    const taskIds = project.contributionEvents.map(e => e.referenceId);
+    const taskIds = project.contributionEvents.map((e) => e.referenceId);
     const tasks = await this.prisma.task.findMany({
       where: { id: { in: taskIds } },
     });
-    const taskMap = new Map(tasks.map(t => [t.id, t]));
+    const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
     // Fetch all PR reviews to enforce caps
     // For PR_REVIEW_APPROVED, referenceId is the prReview.id
-    const reviewIds = project.contributionEvents.filter(e => e.type === 'PR_REVIEW_APPROVED').map(e => e.referenceId);
+    const reviewIds = project.contributionEvents
+      .filter((e) => e.type === 'PR_REVIEW_APPROVED')
+      .map((e) => e.referenceId);
     const reviews = await this.prisma.prReview.findMany({
       where: { id: { in: reviewIds } },
       include: { pullRequest: true },
     });
-    const reviewMap = new Map(reviews.map(r => [r.id, r]));
+    const reviewMap = new Map(reviews.map((r) => [r.id, r]));
 
     // Fetch overrides
     const overrides = await this.prisma.scoreOverride.findMany({
@@ -98,20 +102,23 @@ export class ScoringService {
         const task = taskMap.get(event.referenceId);
         if (task) {
           modifier *= config.multipliers.difficulty[task.difficulty] ?? 1.0;
-          modifier *= this.getTimelinessModifier(task, config.multipliers.timeliness);
+          modifier *= this.getTimelinessModifier(
+            task,
+            config.multipliers.timeliness,
+          );
         }
         finalScore = Math.round(base * modifier);
-        
+
         // Anti-Gaming: Max score per task rule
         const cap = config.caps.maxScorePerTask;
         if (finalScore > cap) finalScore = cap;
-        
+
         userScore.totalScore += finalScore;
-        const key = event.type as 'PR_MERGED' | 'TASK_COMPLETED';
+        const key = event.type;
         userScore.breakdown[key].push({
           task: task?.externalTaskId ?? event.referenceId,
           score: finalScore,
-          metadata: { difficulty: task?.difficulty, base }
+          metadata: { difficulty: task?.difficulty, base },
         });
       }
 
@@ -128,23 +135,23 @@ export class ScoringService {
           // Enforce Max Review Score Per PR
           const prId = review.pullRequestId;
           const currentPrScore = prReviewScores.get(prId) ?? 0;
-          
+
           if (currentPrScore >= config.caps.maxReviewScorePerPR) {
-             // PR already maxed out for review points, skip
-             continue;
+            // PR already maxed out for review points, skip
+            continue;
           }
-          
+
           // Partial points if we hit the cap
           const remainingCap = config.caps.maxReviewScorePerPR - currentPrScore;
           const grantedScore = Math.min(finalScore, remainingCap);
-          
+
           prReviewScores.set(prId, currentPrScore + grantedScore);
-          
+
           userScore.reviewScore += grantedScore;
           userScore.totalScore += grantedScore;
           userScore.breakdown.REVIEWS.push({
             pr: review.pullRequest.externalPrId,
-            score: grantedScore
+            score: grantedScore,
           });
         }
       }
@@ -156,24 +163,26 @@ export class ScoringService {
       userScore.totalScore += override.delta;
       userScore.breakdown.OVERRIDES.push({
         reason: override.reason,
-        score: override.delta
+        score: override.delta,
       });
     }
 
     // 3. Apply Total Review Cap (e.g. 20% of total score)
     for (const [userId, userScore] of userScores.entries()) {
       if (userScore.totalScore > 0 && userScore.reviewScore > 0) {
-        const maxReviewAllowed = Math.floor(userScore.totalScore * config.caps.maxReviewScorePercent);
+        const maxReviewAllowed = Math.floor(
+          userScore.totalScore * config.caps.maxReviewScorePercent,
+        );
         if (userScore.reviewScore > maxReviewAllowed) {
           const deduction = userScore.reviewScore - maxReviewAllowed;
           userScore.totalScore -= deduction;
           userScore.breakdown.REVIEWS.push({
             pr: 'GLOBAL_CAP_DEDUCTION',
-            score: -deduction
+            score: -deduction,
           });
         }
       }
-      
+
       // Ensure score doesn't go below 0 purely by algorithm (only manual overrides could result in negatives)
       // but let's allow negative if teacher explicitly overrides it.
     }
@@ -182,22 +191,24 @@ export class ScoringService {
     for (const [userId, scoreData] of userScores.entries()) {
       await this.prisma.contributionScore.upsert({
         where: {
-          projectId_userId: { projectId, userId }
+          projectId_userId: { projectId, userId },
         },
         create: {
           projectId,
           userId,
           totalScore: scoreData.totalScore,
-          breakdown: scoreData.breakdown
+          breakdown: scoreData.breakdown,
         },
         update: {
           totalScore: scoreData.totalScore,
-          breakdown: scoreData.breakdown
-        }
+          breakdown: scoreData.breakdown,
+        },
       });
     }
 
-    this.logger.log(`Calculated scores for ${userScores.size} users in project ${projectId}`);
+    this.logger.log(
+      `Calculated scores for ${userScores.size} users in project ${projectId}`,
+    );
   }
 
   private isWithinEvaluationWindow(event: any, project: any): boolean {
@@ -237,11 +248,14 @@ export class ScoringService {
     userId: string,
     delta: number,
     reason: string,
-    actorId: string
+    actorId: string,
   ): Promise<void> {
-    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+    });
     if (!project) throw new Error('Project not found');
-    if (project.status === 'LOCKED') throw new Error('Cannot override score in a locked project');
+    if (project.status === 'LOCKED')
+      throw new Error('Cannot override score in a locked project');
 
     await this.prisma.scoreOverride.create({
       data: {
@@ -250,7 +264,7 @@ export class ScoringService {
         delta,
         reason,
         overriddenBy: actorId,
-      }
+      },
     });
 
     await this.prisma.auditLog.create({
@@ -258,19 +272,23 @@ export class ScoringService {
         action: 'SCORE_OVERRIDE',
         actorId,
         projectId,
-        metadata: { userId, delta, reason }
-      }
+        metadata: { userId, delta, reason },
+      },
     });
 
-    this.logger.log(`Override applied by ${actorId} for user ${userId}: ${delta > 0 ? '+' : ''}${delta} (${reason})`);
-    
+    this.logger.log(
+      `Override applied by ${actorId} for user ${userId}: ${delta > 0 ? '+' : ''}${delta} (${reason})`,
+    );
+
     // Automatically trigger recalculation
     await this.calculateProjectScores(projectId);
   }
 
   @OnEvent('contribution.created')
   async handleContributionCreated(payload: { projectId: string }) {
-    this.logger.log(`Received contribution.created event for project ${payload.projectId}`);
+    this.logger.log(
+      `Received contribution.created event for project ${payload.projectId}`,
+    );
     await this.calculateProjectScores(payload.projectId);
   }
 }

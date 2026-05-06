@@ -5,7 +5,9 @@ jest.mock('@octokit/graphql', () => ({
 }));
 
 jest.mock('@octokit/auth-app', () => ({
-  createAppAuth: jest.fn().mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
+  createAppAuth: jest
+    .fn()
+    .mockReturnValue(jest.fn().mockResolvedValue({ token: 'mock-token' })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -22,7 +24,13 @@ describe('PrLifecycleHandler', () => {
     project: { findFirst: jest.fn() },
     task: { findUnique: jest.fn(), update: jest.fn() },
     user: { findUnique: jest.fn(), create: jest.fn() },
-    pullRequest: { upsert: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+    pullRequest: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      findFirst: jest.fn(),
+    },
     auditLog: { create: jest.fn() },
     contributionEvent: { create: jest.fn() },
   };
@@ -48,7 +56,7 @@ describe('PrLifecycleHandler', () => {
 
     handler = module.get<PrLifecycleHandler>(PrLifecycleHandler);
     jest.clearAllMocks();
-    
+
     // Silence logger during tests
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
@@ -56,8 +64,12 @@ describe('PrLifecycleHandler', () => {
   });
 
   it('should parse task ID correctly', () => {
-    expect(handler.parseTaskId('Update [TASK-123] readme', null)).toBe('TASK-123');
-    expect(handler.parseTaskId('No task here', 'But body has TASK-456')).toBe('TASK-456');
+    expect(handler.parseTaskId('Update [TASK-123] readme', null)).toBe(
+      'TASK-123',
+    );
+    expect(handler.parseTaskId('No task here', 'But body has TASK-456')).toBe(
+      'TASK-456',
+    );
     expect(handler.parseTaskId('Missing', 'Also missing')).toBeNull();
   });
 
@@ -77,14 +89,21 @@ describe('PrLifecycleHandler', () => {
         html_url: 'pr-url',
         head: { sha: 'abc' },
       },
-      repository: { full_name: 'test/repo', owner: { login: 'test' }, name: 'repo' },
+      repository: {
+        full_name: 'test/repo',
+        owner: { login: 'test' },
+        name: 'repo',
+      },
       installation: { id: 123 },
     };
 
     const project = { id: 'p1', status: 'ACTIVE' };
 
     it('should reject PR if project is locked', async () => {
-      mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1', status: 'LOCKED' });
+      mockPrismaService.project.findFirst.mockResolvedValue({
+        id: 'p1',
+        status: 'LOCKED',
+      });
       await handler.handle(defaultPayload);
       expect(mockPrismaService.pullRequest.upsert).not.toHaveBeenCalled();
     });
@@ -92,27 +111,34 @@ describe('PrLifecycleHandler', () => {
     it('should persist PR indicating INVALID if no task found', async () => {
       mockPrismaService.project.findFirst.mockResolvedValue(project);
       mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u1' });
-      
+
       const payloadNoTask = JSON.parse(JSON.stringify(defaultPayload));
       payloadNoTask.pull_request.title = 'No task here';
-      
+
       await handler.handle(payloadNoTask);
-      
-      expect(mockPrismaService.pullRequest.upsert).toHaveBeenCalledWith(expect.objectContaining({
-        create: expect.objectContaining({ taskId: null }),
-      }));
+
+      expect(mockPrismaService.pullRequest.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ taskId: null }),
+        }),
+      );
     });
 
     it('should FLAG if PR author is not assignee', async () => {
       mockPrismaService.project.findFirst.mockResolvedValue(project);
       mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u1' });
-      mockPrismaService.task.findUnique.mockResolvedValue({ id: 't1', assignee: { githubUserId: '999', name: 'Other' } });
+      mockPrismaService.task.findUnique.mockResolvedValue({
+        id: 't1',
+        assignee: { githubUserId: '999', name: 'Other' },
+      });
 
       await handler.handle(defaultPayload);
 
-      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ action: 'TASK_REASSIGN' })
-      }));
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'TASK_REASSIGN' }),
+        }),
+      );
     });
   });
 });

@@ -1,5 +1,19 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
 import { AssignTaskDto } from './dto/assign-task.dto';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -31,10 +45,7 @@ export class TasksController {
   @Post(':id/assign')
   @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Assign task to a user (Project Manager+)' })
-  async assignTask(
-    @Param('id') id: string,
-    @Body() dto: AssignTaskDto,
-  ) {
+  async assignTask(@Param('id') id: string, @Body() dto: AssignTaskDto) {
     return this.tasksService.assignTask(id, dto.assignee_id);
   }
 }

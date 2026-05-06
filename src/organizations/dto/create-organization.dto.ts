@@ -7,7 +7,10 @@ export class CreateOrganizationDto {
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: 'enterprise', description: 'License plan for the organization' })
+  @ApiProperty({
+    example: 'enterprise',
+    description: 'License plan for the organization',
+  })
   @IsString()
   @IsNotEmpty()
   license_plan: string;

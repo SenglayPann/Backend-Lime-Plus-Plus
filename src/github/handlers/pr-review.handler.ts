@@ -32,7 +32,9 @@ export class PrReviewHandler {
     const { action, review, pull_request, repository } = payload;
 
     if (!review || !pull_request || !repository) {
-      this.logger.warn('Invalid pull_request_review payload: missing required fields');
+      this.logger.warn(
+        'Invalid pull_request_review payload: missing required fields',
+      );
       return;
     }
 
@@ -60,7 +62,9 @@ export class PrReviewHandler {
     });
 
     if (!project) {
-      this.logger.warn(`No project found for repository ${repository.full_name}`);
+      this.logger.warn(
+        `No project found for repository ${repository.full_name}`,
+      );
       return;
     }
 
@@ -127,7 +131,9 @@ export class PrReviewHandler {
   /**
    * Map GitHub review state string to our ReviewState enum
    */
-  private mapReviewState(state: string): 'APPROVED' | 'COMMENTED' | 'CHANGES_REQUESTED' {
+  private mapReviewState(
+    state: string,
+  ): 'APPROVED' | 'COMMENTED' | 'CHANGES_REQUESTED' {
     switch (state.toLowerCase()) {
       case 'approved':
         return 'APPROVED';
@@ -152,7 +158,9 @@ export class PrReviewHandler {
     });
 
     if (!user) {
-      this.logger.log(`Auto-creating user record for GitHub user ${login} (${githubUserId})`);
+      this.logger.log(
+        `Auto-creating user record for GitHub user ${login} (${githubUserId})`,
+      );
       user = await this.prisma.user.create({
         data: {
           githubUserId,

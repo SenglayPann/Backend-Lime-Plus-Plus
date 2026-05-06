@@ -28,7 +28,9 @@ export class ProjectMetadataHandler {
       return;
     }
 
-    this.logger.log(`Project metadata ${action}: node_id=${projects_v2.node_id}`);
+    this.logger.log(
+      `Project metadata ${action}: node_id=${projects_v2.node_id}`,
+    );
 
     // Find the project by external project ID
     const project = await this.prisma.project.findFirst({
@@ -36,7 +38,9 @@ export class ProjectMetadataHandler {
     });
 
     if (!project) {
-      this.logger.warn(`No project found for GitHub Project node ${projects_v2.node_id}`);
+      this.logger.warn(
+        `No project found for GitHub Project node ${projects_v2.node_id}`,
+      );
       return;
     }
 
@@ -68,7 +72,9 @@ export class ProjectMetadataHandler {
           where: { id: project.id },
           data: { name: newTitle },
         });
-        this.logger.log(`Project ${project.id} title synced: "${project.name}" → "${newTitle}"`);
+        this.logger.log(
+          `Project ${project.id} title synced: "${project.name}" → "${newTitle}"`,
+        );
       }
     }
   }

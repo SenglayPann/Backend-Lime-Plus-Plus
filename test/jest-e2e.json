@@ -6,6 +6,9 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
+  "transformIgnorePatterns": [
+    "node_modules/(?!(@octokit|universal-user-agent|before-after-hook|is-plain-object)/)"
+  ],
   "moduleNameMapper": {
     "^src/(.*)$": "<rootDir>/../src/$1"
   }

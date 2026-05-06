@@ -11,7 +11,7 @@ export class PullRequestsService {
       where: {
         projectId,
         authorId: assigneeId || undefined,
-        status: status as any || undefined,
+        status: (status as any) || undefined,
       },
       include: {
         author: true,
@@ -39,7 +39,7 @@ export class PullRequestsService {
       task_id: task ? task.externalTaskId : null,
       merged: pr.status === PrStatus.MERGED,
       author_login: pr.author.githubUserId,
-      assignee_match: task ? (task.assigneeId === pr.authorId) : null,
+      assignee_match: task ? task.assigneeId === pr.authorId : null,
     };
   }
 }

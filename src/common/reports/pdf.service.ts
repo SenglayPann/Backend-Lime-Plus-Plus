@@ -26,8 +26,16 @@ export class PdfService {
       doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke().moveDown();
 
       // Score Summary
-      doc.fontSize(16).text('Evaluation Summary', { underline: true }).moveDown(0.5);
-      doc.fontSize(24).fillColor('#4d7c0f').text(`Final Score: ${data.totalScore}`, { align: 'center' }).fillColor('black').moveDown();
+      doc
+        .fontSize(16)
+        .text('Evaluation Summary', { underline: true })
+        .moveDown(0.5);
+      doc
+        .fontSize(24)
+        .fillColor('#4d7c0f')
+        .text(`Final Score: ${data.totalScore}`, { align: 'center' })
+        .fillColor('black')
+        .moveDown();
 
       // Breakdown
       doc.fontSize(14).text('Contribution Breakdown').moveDown(0.5);
@@ -39,7 +47,9 @@ export class PdfService {
       // Audit Log / Evidence
       doc.fontSize(14).text('Evidence (Merged PRs)').moveDown(0.5);
       data.pullRequests.forEach((pr: any) => {
-        doc.fontSize(10).text(`- [${pr.id}] ${pr.title} (+${pr.score} pts)`, { link: pr.url });
+        doc.fontSize(10).text(`- [${pr.id}] ${pr.title} (+${pr.score} pts)`, {
+          link: pr.url,
+        });
       });
 
       doc.end();
@@ -68,7 +78,9 @@ export class PdfService {
       // Team Performance
       doc.fontSize(14).text('Team Performance Leaderboard').moveDown(0.5);
       data.members.forEach((member: any, index: number) => {
-        doc.fontSize(10).text(`${index + 1}. ${member.name} - ${member.score} points`);
+        doc
+          .fontSize(10)
+          .text(`${index + 1}. ${member.name} - ${member.score} points`);
       });
 
       doc.end();
