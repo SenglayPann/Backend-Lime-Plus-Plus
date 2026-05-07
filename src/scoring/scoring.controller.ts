@@ -15,6 +15,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Scoring & Contributions')
 @ApiBearerAuth()
@@ -44,7 +45,7 @@ export class ScoringController {
     @Param('projectId') projectId: string,
     @Param('userId') userId: string,
     @Body() dto: ScoreOverrideDto,
-    @Request() req: any,
+    @Request() req: RequestWithUser,
   ) {
     return this.scoringService.applyOverride(
       projectId,

@@ -61,28 +61,31 @@ describe('AuthService', () => {
     });
 
     it('should sign JWT with correct payload', async () => {
+      const signSpy = jest.spyOn(jwtService, 'sign');
       await service.login(mockUser);
 
-      expect(jwtService.sign).toHaveBeenCalledWith(
+      expect(signSpy).toHaveBeenCalledWith(
         { sub: 'user-123', email: 'test@example.com', roles: ['ADMIN'] },
         { expiresIn: 900 },
       );
     });
 
     it('should sign refresh token with sub and type', async () => {
+      const signSpy = jest.spyOn(jwtService, 'sign');
       await service.login(mockUser);
 
-      expect(jwtService.sign).toHaveBeenCalledWith(
+      expect(signSpy).toHaveBeenCalledWith(
         { sub: 'user-123', type: 'refresh' },
         { expiresIn: 604800 }, // 7d
       );
     });
 
     it('should handle null email by defaulting to empty string', async () => {
+      const signSpy = jest.spyOn(jwtService, 'sign');
       const userNoEmail: UserWithRoles = { ...mockUser, email: null };
       await service.login(userNoEmail);
 
-      expect(jwtService.sign).toHaveBeenCalledWith(
+      expect(signSpy).toHaveBeenCalledWith(
         { sub: 'user-123', email: '', roles: ['ADMIN'] },
         { expiresIn: 900 },
       );

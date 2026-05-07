@@ -2,6 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubService } from '../github.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Project, Task, PullRequest, User } from '../../generated/prisma';
+import {
+  GitHubPullRequestEventPayload,
+  GitHubPullRequestPayload,
+  GitHubInstallationPayload,
+  GitHubRepositoryPayload,
+} from '../github-payloads';
 
 /**
  * PR Lifecycle Handler (spec §5, §6)
@@ -32,7 +39,7 @@ export class PrLifecycleHandler {
   /**
    * Main entry point for pull_request webhook events
    */
-  async handle(payload: any): Promise<void> {
+  async handle(payload: GitHubPullRequestEventPayload): Promise<void> {
     const { action, pull_request, repository } = payload;
 
     if (!pull_request || !repository) {
@@ -79,11 +86,11 @@ export class PrLifecycleHandler {
    * Handle PR opened or synchronize (new commits pushed)
    */
   private async handleOpenedOrSync(
-    project: any,
-    pr: any,
+    project: Project,
+    pr: GitHubPullRequestPayload,
     action: string,
-    installation: any,
-    repository: any,
+    installation: GitHubInstallationPayload | undefined,
+    repository: GitHubRepositoryPayload,
   ): Promise<void> {
     // Strict mode: reject new PRs on locked projects
     if (project.status === 'LOCKED' && action === 'opened') {
@@ -104,7 +111,7 @@ export class PrLifecycleHandler {
     );
 
     // Validate task linkage
-    let task = null;
+    let task: (Task & { assignee: User }) | null = null;
     let validationStatus = 'VALID';
     let statusMessage = '';
 
@@ -115,7 +122,7 @@ export class PrLifecycleHandler {
       validationStatus = 'INVALID';
       statusMessage = 'No task ID (e.g. TASK-42) found in PR title or body';
     } else {
-      task = await this.prisma.task.findUnique({
+      task = (await this.prisma.task.findUnique({
         where: {
           projectId_externalTaskId: {
             projectId: project.id,
@@ -123,7 +130,7 @@ export class PrLifecycleHandler {
           },
         },
         include: { assignee: true },
-      });
+      })) as (Task & { assignee: User }) | null;
 
       if (!task) {
         this.logger.warn(
@@ -220,7 +227,13 @@ export class PrLifecycleHandler {
   /**
    * Handle PR closed (merged or just closed)
    */
-  private async handleClosed(project: any, pr: any): Promise<void> {
+  /**
+   * Handle PR closed (merged or just closed)
+   */
+  private async handleClosed(
+    project: Project,
+    pr: GitHubPullRequestPayload,
+  ): Promise<void> {
     const isMerged = pr.merged === true;
 
     // Find the PR in our DB
@@ -244,7 +257,7 @@ export class PrLifecycleHandler {
       );
 
       const taskId = this.parseTaskId(pr.title, pr.body);
-      let task = null;
+      let task: Task | null = null;
       if (taskId) {
         task = await this.prisma.task.findUnique({
           where: {
@@ -266,7 +279,7 @@ export class PrLifecycleHandler {
           title: pr.title,
           url: pr.html_url,
           status: isMerged ? 'MERGED' : 'CLOSED',
-          mergedAt: isMerged ? new Date(pr.merged_at) : null,
+          mergedAt: isMerged && pr.merged_at ? new Date(pr.merged_at) : null,
         },
       });
 
@@ -277,7 +290,11 @@ export class PrLifecycleHandler {
     }
 
     if (isMerged) {
-      await this.handleMerge(project, existingPr, pr);
+      await this.handleMerge(
+        project,
+        existingPr as PullRequest & { task: Task | null },
+        pr,
+      );
     } else {
       // Closed without merge
       await this.prisma.pullRequest.update({
@@ -296,16 +313,18 @@ export class PrLifecycleHandler {
    *   - Task completion timestamp is immutable
    */
   private async handleMerge(
-    project: any,
-    existingPr: any,
-    prPayload: any,
+    project: Project,
+    existingPr: PullRequest & { task: Task | null },
+    prPayload: GitHubPullRequestPayload,
   ): Promise<void> {
     // Update PR status to MERGED
     await this.prisma.pullRequest.update({
       where: { id: existingPr.id },
       data: {
         status: 'MERGED',
-        mergedAt: new Date(prPayload.merged_at),
+        mergedAt: prPayload.merged_at
+          ? new Date(prPayload.merged_at)
+          : new Date(),
       },
     });
 
@@ -344,8 +363,8 @@ export class PrLifecycleHandler {
    * Emit PR_MERGED and TASK_COMPLETED contribution events
    */
   private async emitMergeContributionEvents(
-    project: any,
-    task: any,
+    project: Project,
+    task: Task,
     authorId: string,
   ): Promise<void> {
     // Mark task as DONE (only if not already done)

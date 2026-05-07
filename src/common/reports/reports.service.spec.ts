@@ -76,9 +76,9 @@ describe('ReportsService', () => {
           name: 'Test User',
           totalScore: 100,
           pullRequests: expect.arrayContaining([
-            expect.objectContaining({ title: 'Task 1', score: 40 }),
-          ]),
-        }),
+            expect.objectContaining({ title: 'Task 1', score: 40 }) as unknown,
+          ]) as unknown,
+        }) as unknown,
       );
     });
   });

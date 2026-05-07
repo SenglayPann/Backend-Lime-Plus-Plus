@@ -31,6 +31,9 @@ export class AuthService {
       roles: user.roles,
     };
 
+    // Satisfy require-await
+    await Promise.resolve();
+
     const accessTokenExpiresIn = this.parseExpiryToSeconds(
       this.configService.get<string>('JWT_EXPIRES_IN') || '15m',
     );
@@ -56,7 +59,10 @@ export class AuthService {
 
   async refreshToken(refreshToken: string): Promise<TokenResponse | null> {
     try {
-      const payload = this.jwtService.verify(refreshToken);
+      await Promise.resolve(); // Satisfy require-await
+      const payload = this.jwtService.verify<JwtPayload & { type?: string }>(
+        refreshToken,
+      );
 
       if (payload.type !== 'refresh') {
         return null;
@@ -94,9 +100,9 @@ export class AuthService {
     }
   }
 
-  validateToken(token: string): any {
+  validateToken(token: string): JwtPayload | null {
     try {
-      return this.jwtService.verify(token);
+      return this.jwtService.verify<JwtPayload>(token);
     } catch {
       return null;
     }

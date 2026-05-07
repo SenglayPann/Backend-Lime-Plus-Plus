@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Project } from '../../generated/prisma';
+import {
+  GitHubProjectV2EventPayload,
+  GitHubProjectV2Payload,
+  GitHubUserPayload,
+} from '../github-payloads';
 
 /**
  * Project Metadata Handler (spec §9)
@@ -20,7 +26,7 @@ export class ProjectMetadataHandler {
   /**
    * Main entry point for projects_v2 webhook events
    */
-  async handle(payload: any): Promise<void> {
+  async handle(payload: GitHubProjectV2EventPayload): Promise<void> {
     const { action, projects_v2, sender } = payload;
 
     if (!projects_v2) {
@@ -62,8 +68,13 @@ export class ProjectMetadataHandler {
   /**
    * Handle project edited → sync title
    */
-  private async handleEdited(project: any, projectPayload: any): Promise<void> {
-    const changes: Record<string, any> = projectPayload.changes ?? {};
+  private async handleEdited(
+    project: Project,
+    projectPayload: GitHubProjectV2Payload & {
+      changes?: { title?: { from?: string; to?: string } };
+    },
+  ): Promise<void> {
+    const changes = projectPayload.changes ?? {};
 
     if (changes.title) {
       const newTitle = changes.title.to ?? projectPayload.title;
@@ -82,7 +93,10 @@ export class ProjectMetadataHandler {
   /**
    * Handle project deleted → archive (spec §13: task deleted → soft-delete + flag)
    */
-  private async handleDeleted(project: any, sender: any): Promise<void> {
+  private async handleDeleted(
+    project: Project,
+    sender: GitHubUserPayload,
+  ): Promise<void> {
     await this.prisma.project.update({
       where: { id: project.id },
       data: { status: 'ARCHIVED' },
@@ -115,7 +129,10 @@ export class ProjectMetadataHandler {
   /**
    * Handle project closed → lock
    */
-  private async handleClosed(project: any, sender: any): Promise<void> {
+  private async handleClosed(
+    project: Project,
+    sender: GitHubUserPayload,
+  ): Promise<void> {
     await this.prisma.project.update({
       where: { id: project.id },
       data: {

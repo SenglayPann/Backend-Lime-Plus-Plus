@@ -11,7 +11,7 @@ export class PullRequestsService {
       where: {
         projectId,
         authorId: assigneeId || undefined,
-        status: (status as any) || undefined,
+        status: (status as PrStatus) || undefined,
       },
       include: {
         author: true,

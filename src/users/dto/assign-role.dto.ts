@@ -1,11 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsNotEmpty,
-  IsEnum,
-  IsString,
-  IsOptional,
-  IsUUID,
-} from 'class-validator';
+import { IsNotEmpty, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { Role } from '../../generated/prisma';
 
 export class AssignRoleDto {

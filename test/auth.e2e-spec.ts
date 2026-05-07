@@ -2,11 +2,20 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe, HttpStatus } from '@nestjs/common';
 import request from 'supertest';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import { AppModule } from '../src/app.module';
 import { TransformInterceptor } from '../src/common/interceptors';
 import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma/prisma.service';
+
+interface ApiResponse {
+  success: boolean;
+  data?: Record<string, unknown>;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
 
 describe('Auth Endpoints (e2e)', () => {
   let app: INestApplication;
@@ -87,10 +96,11 @@ describe('Auth Endpoints (e2e)', () => {
         .send({ refreshToken })
         .expect(HttpStatus.OK)
         .expect((res) => {
-          expect(res.body).toHaveProperty('data');
-          expect(res.body.data).toHaveProperty('accessToken');
-          expect(res.body.data).toHaveProperty('refreshToken');
-          expect(res.body.data).toHaveProperty('expiresIn');
+          const body = res.body as ApiResponse;
+          expect(body).toHaveProperty('data');
+          expect(body.data).toHaveProperty('accessToken');
+          expect(body.data).toHaveProperty('refreshToken');
+          expect(body.data).toHaveProperty('expiresIn');
         });
     });
 
@@ -116,7 +126,8 @@ describe('Auth Endpoints (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(HttpStatus.OK)
         .expect((res) => {
-          expect(res.body.data).toHaveProperty(
+          const body = res.body as ApiResponse;
+          expect(body.data).toHaveProperty(
             'message',
             'Logged out successfully',
           );
@@ -144,10 +155,11 @@ describe('Auth Endpoints (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(HttpStatus.OK)
         .expect((res) => {
-          expect(res.body.data).toHaveProperty('id');
-          expect(res.body.data).toHaveProperty('email');
-          expect(res.body.data).toHaveProperty('name');
-          expect(res.body.data).toHaveProperty('roles');
+          const body = res.body as ApiResponse;
+          expect(body.data).toHaveProperty('id');
+          expect(body.data).toHaveProperty('email');
+          expect(body.data).toHaveProperty('name');
+          expect(body.data).toHaveProperty('roles');
         });
     });
 
@@ -165,8 +177,9 @@ describe('Auth Endpoints (e2e)', () => {
         .send({ refreshToken })
         .expect(HttpStatus.OK)
         .expect((res) => {
-          expect(res.body).toHaveProperty('success', true);
-          expect(res.body).toHaveProperty('data');
+          const body = res.body as ApiResponse;
+          expect(body).toHaveProperty('success', true);
+          expect(body).toHaveProperty('data');
         });
     });
 
@@ -176,10 +189,11 @@ describe('Auth Endpoints (e2e)', () => {
         .send({ refreshToken: 'bad-token' })
         .expect(HttpStatus.UNAUTHORIZED)
         .expect((res) => {
-          expect(res.body).toHaveProperty('success', false);
-          expect(res.body).toHaveProperty('error');
-          expect(res.body.error).toHaveProperty('code');
-          expect(res.body.error).toHaveProperty('message');
+          const body = res.body as ApiResponse;
+          expect(body).toHaveProperty('success', false);
+          expect(body).toHaveProperty('error');
+          expect(body.error).toHaveProperty('code');
+          expect(body.error).toHaveProperty('message');
         });
     });
   });

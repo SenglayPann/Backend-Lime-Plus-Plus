@@ -15,6 +15,7 @@ import { PrReviewHandler } from './pr-review.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { GitHubPullRequestReviewEventPayload } from '../github-payloads';
 
 describe('PrReviewHandler', () => {
   let handler: PrReviewHandler;
@@ -48,18 +49,26 @@ describe('PrReviewHandler', () => {
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
   });
 
-  const validPayload = {
+  const validPayload: GitHubPullRequestReviewEventPayload = {
     action: 'submitted',
     review: {
-      state: 'approved',
+      id: 123,
+      node_id: 'node-123',
       user: { id: 2, login: 'reviewer' },
+      body: 'Good job',
+      state: 'approved',
+      html_url: 'http://github.com/review',
+      pull_request_url: 'http://github.com/pr',
+      submitted_at: new Date().toISOString(),
+      commit_id: 'abc',
+      author_association: 'MEMBER',
     },
     pull_request: {
       number: 1,
-      user: { id: 1 }, // PR author
+      user: { id: 1, login: 'author' }, // PR author
     },
     repository: { full_name: 'test/repo' },
-  };
+  } as unknown as GitHubPullRequestReviewEventPayload;
 
   it('should ignore non-submitted reviews', async () => {
     await handler.handle({ ...validPayload, action: 'edited' });
@@ -67,8 +76,14 @@ describe('PrReviewHandler', () => {
   });
 
   it('should ignore self-reviews', async () => {
-    const payload = JSON.parse(JSON.stringify(validPayload));
-    payload.review.user.id = 1; // reviewer is author
+    const payload = {
+      ...validPayload,
+      review: {
+        ...validPayload.review,
+        user: { ...validPayload.review.user, id: 1 },
+      },
+    } as GitHubPullRequestReviewEventPayload;
+
     await handler.handle(payload);
     expect(mockPrismaService.project.findFirst).not.toHaveBeenCalled();
   });
@@ -82,13 +97,16 @@ describe('PrReviewHandler', () => {
 
     expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ state: 'APPROVED' }),
+        data: expect.objectContaining({ state: 'APPROVED' }) as unknown,
       }),
     );
 
     expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ type: 'PR_REVIEW_APPROVED', score: 3 }),
+        data: expect.objectContaining({
+          type: 'PR_REVIEW_APPROVED',
+          score: 3,
+        }) as unknown,
       }),
     );
   });
@@ -98,14 +116,19 @@ describe('PrReviewHandler', () => {
     mockPrismaService.pullRequest.findUnique.mockResolvedValue({ id: 'pr1' });
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u2' });
 
-    const payload = JSON.parse(JSON.stringify(validPayload));
-    payload.review.state = 'commented';
+    const payload = {
+      ...validPayload,
+      review: {
+        ...validPayload.review,
+        state: 'commented',
+      },
+    } as GitHubPullRequestReviewEventPayload;
 
     await handler.handle(payload);
 
     expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ state: 'COMMENTED' }),
+        data: expect.objectContaining({ state: 'COMMENTED' }) as unknown,
       }),
     );
 

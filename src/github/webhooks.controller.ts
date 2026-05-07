@@ -12,7 +12,12 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { Request } from 'express';
 import { WebhooksService } from './webhooks.service';
+
+interface CustomRequest extends Request {
+  rawBody?: Buffer;
+}
 
 /**
  * Webhook receiver per spec: lime_webhook_processing_flows.md §2–§3
@@ -41,7 +46,7 @@ export class WebhooksController {
     @Headers('x-github-event') event: string,
     @Headers('x-github-delivery') deliveryId: string,
     @Headers('x-hub-signature-256') signature: string,
-    @Req() req: any,
+    @Req() req: CustomRequest,
   ) {
     // 1. Validate required headers (spec §2)
     if (!event || !deliveryId) {
@@ -83,7 +88,7 @@ export class WebhooksController {
     }
 
     // 6. Persist raw payload (spec §3 pipeline step)
-    const payload = JSON.parse(rawBodyString);
+    const payload = JSON.parse(rawBodyString) as Record<string, unknown>;
     await this.webhooksService.storeDelivery({ event, deliveryId, payload });
 
     // 7. Enqueue to async job queue (spec §3 pipeline step)

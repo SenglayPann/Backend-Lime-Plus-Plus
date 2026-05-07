@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubService } from '../github.service';
 import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { GitHubPullRequestEventPayload } from '../github-payloads';
 
 describe('PrLifecycleHandler', () => {
   let handler: PrLifecycleHandler;
@@ -79,23 +80,34 @@ describe('PrLifecycleHandler', () => {
   });
 
   describe('handleOpenedOrSync', () => {
-    const defaultPayload = {
+    const defaultPayload: GitHubPullRequestEventPayload = {
       action: 'opened',
       pull_request: {
+        id: 1,
+        node_id: 'node-1',
         number: 1,
         title: '[TASK-42] Hello',
         body: null,
         user: { id: 101, login: 'octocat', avatar_url: 'url' },
         html_url: 'pr-url',
-        head: { sha: 'abc' },
+        head: { sha: 'abc', ref: 'head', label: 'head', repo: { id: 1 } },
+        base: { sha: 'def', ref: 'base', label: 'base', repo: { id: 1 } },
+        state: 'open',
+        merged: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
       repository: {
+        id: 1,
+        node_id: 'node-repo',
         full_name: 'test/repo',
-        owner: { login: 'test' },
+        owner: { id: 1, login: 'test' },
         name: 'repo',
+        private: false,
+        html_url: 'repo-url',
       },
       installation: { id: 123 },
-    };
+    } as unknown as GitHubPullRequestEventPayload;
 
     const project = { id: 'p1', status: 'ACTIVE' };
 
@@ -112,14 +124,16 @@ describe('PrLifecycleHandler', () => {
       mockPrismaService.project.findFirst.mockResolvedValue(project);
       mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u1' });
 
-      const payloadNoTask = JSON.parse(JSON.stringify(defaultPayload));
+      const payloadNoTask = JSON.parse(
+        JSON.stringify(defaultPayload),
+      ) as GitHubPullRequestEventPayload;
       payloadNoTask.pull_request.title = 'No task here';
 
       await handler.handle(payloadNoTask);
 
       expect(mockPrismaService.pullRequest.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({ taskId: null }),
+          create: expect.objectContaining({ taskId: null }) as unknown,
         }),
       );
     });
@@ -136,7 +150,7 @@ describe('PrLifecycleHandler', () => {
 
       expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ action: 'TASK_REASSIGN' }),
+          data: expect.objectContaining({ action: 'TASK_REASSIGN' }) as unknown,
         }),
       );
     });

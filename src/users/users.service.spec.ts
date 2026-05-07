@@ -50,7 +50,7 @@ describe('UsersService', () => {
           githubUserId: '123',
           githubUsername: 'test',
           email: 'test@test.com',
-        }),
+        }) as unknown,
       });
       expect(user.githubUsername).toBe('test');
     });
@@ -78,7 +78,7 @@ describe('UsersService', () => {
         data: expect.objectContaining({
           githubUsername: 'newtest',
           name: 'New Name',
-        }),
+        }) as unknown,
       });
     });
   });

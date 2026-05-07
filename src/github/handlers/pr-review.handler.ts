@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { GitHubPullRequestReviewEventPayload } from '../github-payloads';
 
 /**
  * PR Review Handler (spec §7)
@@ -28,7 +29,7 @@ export class PrReviewHandler {
   /**
    * Main entry point for pull_request_review webhook events
    */
-  async handle(payload: any): Promise<void> {
+  async handle(payload: GitHubPullRequestReviewEventPayload): Promise<void> {
     const { action, review, pull_request, repository } = payload;
 
     if (!review || !pull_request || !repository) {

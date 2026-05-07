@@ -15,6 +15,8 @@ import { TaskSyncHandler } from './task-sync.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 
+import { GitHubProjectV2ItemEventPayload } from '../github-payloads';
+
 describe('TaskSyncHandler', () => {
   let handler: TaskSyncHandler;
 
@@ -42,13 +44,19 @@ describe('TaskSyncHandler', () => {
   });
 
   const basePayload = {
+    action: 'created',
     projects_v2_item: {
       project_node_id: 'pn1',
       node_id: 'n1',
       content_node_id: 'cn1',
+      content_type: 'Issue',
+      creator: { id: 1, login: 'creator' },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     },
     sender: { id: 1, login: 'user1' },
-  };
+    organization: { id: 1, login: 'org' },
+  } as unknown as GitHubProjectV2ItemEventPayload;
 
   it('should handle created action by creating a new task', async () => {
     mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1' });
@@ -63,7 +71,7 @@ describe('TaskSyncHandler', () => {
           externalTaskId: 'TASK-cn1',
           assigneeId: 'u1',
           status: 'TODO',
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -86,7 +94,7 @@ describe('TaskSyncHandler', () => {
           field_value: { field_name: 'Status', to: { name: 'Done' } },
         },
       },
-    };
+    } as GitHubProjectV2ItemEventPayload;
 
     await handler.handle(payload);
 
@@ -114,7 +122,7 @@ describe('TaskSyncHandler', () => {
         ...basePayload.projects_v2_item,
         changes: { field_value: { field_name: 'Assignees' } },
       },
-    };
+    } as GitHubProjectV2ItemEventPayload;
 
     await handler.handle(payload);
 
@@ -127,8 +135,8 @@ describe('TaskSyncHandler', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           action: 'TASK_REASSIGN',
-          metadata: expect.objectContaining({ hasOpenPRs: true }),
-        }),
+          metadata: expect.objectContaining({ hasOpenPRs: true }) as unknown,
+        }) as unknown,
       }),
     );
   });

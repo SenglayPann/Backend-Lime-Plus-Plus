@@ -7,7 +7,7 @@ import {
 } from '@nestjs/swagger';
 import { AuditService } from './audit.service';
 import { Roles } from '../decorators/roles.decorator';
-import { Role } from '../../generated/prisma';
+import { Role, AuditAction } from '../../generated/prisma';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RolesGuard } from '../guards/roles.guard';
 
@@ -29,6 +29,10 @@ export class AuditController {
     @Query('actor_id') actorId?: string,
     @Query('action') action?: string,
   ) {
-    return this.auditService.findAll(projectId, actorId, action);
+    return this.auditService.findAll(
+      projectId,
+      actorId,
+      action as AuditAction | undefined,
+    );
   }
 }

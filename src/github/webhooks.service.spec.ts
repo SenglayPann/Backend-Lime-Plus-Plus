@@ -12,7 +12,7 @@ jest.mock('@octokit/auth-app', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { WebhooksService } from './webhooks.service';
+import { WebhooksService, WebhookEvent } from './webhooks.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { createHmac } from 'crypto';
 import {
@@ -124,10 +124,10 @@ describe('WebhooksService', () => {
 
   describe('storeDelivery', () => {
     it('should store a webhook delivery with correct platform', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'pull_request',
         deliveryId: 'del-456',
-        payload: { action: 'opened' },
+        payload: { action: 'opened' } as Record<string, unknown>,
       };
       await service.storeDelivery(event);
       expect(mockPrismaService.webhookDelivery.create).toHaveBeenCalledWith({
@@ -146,7 +146,7 @@ describe('WebhooksService', () => {
       await service.markProcessed('del-456');
       expect(mockPrismaService.webhookDelivery.update).toHaveBeenCalledWith({
         where: { deliveryId: 'del-456' },
-        data: { processedAt: expect.any(Date) },
+        data: { processedAt: expect.any(Date) as unknown },
       });
     });
   });
@@ -155,20 +155,20 @@ describe('WebhooksService', () => {
 
   describe('routeEvent', () => {
     it('should handle pull_request events (spec §5)', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'pull_request',
         deliveryId: 'del-1',
         payload: {
           action: 'opened',
           pull_request: { number: 1, title: 'Test PR' },
           repository: { full_name: 'owner/repo' },
-        },
+        } as Record<string, unknown>,
       };
       await expect(service.routeEvent(event)).resolves.not.toThrow();
     });
 
     it('should handle pull_request_review events (spec §7)', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'pull_request_review',
         deliveryId: 'del-2',
         payload: {
@@ -176,56 +176,56 @@ describe('WebhooksService', () => {
           review: { state: 'approved' },
           pull_request: { number: 1 },
           repository: { full_name: 'owner/repo' },
-        },
+        } as Record<string, unknown>,
       };
       await expect(service.routeEvent(event)).resolves.not.toThrow();
     });
 
     it('should handle projects_v2_item events (spec §8)', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'projects_v2_item',
         deliveryId: 'del-3',
-        payload: { action: 'edited' },
+        payload: { action: 'edited' } as Record<string, unknown>,
       };
       await expect(service.routeEvent(event)).resolves.not.toThrow();
     });
 
     it('should handle projects_v2 events (spec §9)', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'projects_v2',
         deliveryId: 'del-4',
-        payload: { action: 'edited' },
+        payload: { action: 'edited' } as Record<string, unknown>,
       };
       await expect(service.routeEvent(event)).resolves.not.toThrow();
     });
 
     it('should handle push events (spec §10)', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'push',
         deliveryId: 'del-5',
         payload: {
           ref: 'refs/heads/main',
           repository: { full_name: 'owner/repo' },
           commits: [{ id: 'abc123', message: 'fix: something' }],
-        },
+        } as Record<string, unknown>,
       };
       await expect(service.routeEvent(event)).resolves.not.toThrow();
     });
 
     it('should handle ping events', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'ping',
         deliveryId: 'del-6',
-        payload: { zen: 'Design for failure.' },
+        payload: { zen: 'Design for failure.' } as Record<string, unknown>,
       };
       await expect(service.routeEvent(event)).resolves.not.toThrow();
     });
 
     it('should handle unknown events without throwing', async () => {
-      const event = {
+      const event: WebhookEvent = {
         event: 'unknown_event',
         deliveryId: 'del-7',
-        payload: {},
+        payload: {} as Record<string, unknown>,
       };
       await expect(service.routeEvent(event)).resolves.not.toThrow();
     });

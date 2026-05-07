@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
 import { CreateProjectDto } from './dto/create-project.dto';
-import { ProjectStatus, AuditAction, Role } from '../generated/prisma';
+import { ProjectStatus, AuditAction, TaskStatus } from '../generated/prisma';
 
 @Injectable()
 export class ProjectsService {
@@ -82,7 +82,7 @@ export class ProjectsService {
     });
   }
 
-  async syncTasks(id: string, accessToken: string, actorId: string) {
+  async syncTasks(id: string, accessToken: string) {
     const project = await this.findOne(id);
 
     if (!project.externalProjectId) {
@@ -119,9 +119,9 @@ export class ProjectsService {
         // For sync, we might just create them even without assignee and let PM assign them later
 
         // Map GitHub status to TaskStatus
-        let taskStatus = 'TODO';
-        if (statusValue === 'In Progress') taskStatus = 'IN_PROGRESS';
-        if (statusValue === 'Done') taskStatus = 'DONE';
+        let taskStatus: TaskStatus = TaskStatus.TODO;
+        if (statusValue === 'In Progress') taskStatus = TaskStatus.IN_PROGRESS;
+        if (statusValue === 'Done') taskStatus = TaskStatus.DONE;
 
         return this.prisma.task.upsert({
           where: {
@@ -132,14 +132,14 @@ export class ProjectsService {
           },
           update: {
             title: item.content.title,
-            status: taskStatus as any,
+            status: taskStatus,
             assigneeId: assigneeId || undefined, // Don't overwrite with null if not found?
           },
           create: {
             projectId: id,
             externalTaskId: item.id,
             title: item.content.title,
-            status: taskStatus as any,
+            status: taskStatus,
             assigneeId: assigneeId || 'unassigned', // We might need a placeholder or allow null
           },
         });

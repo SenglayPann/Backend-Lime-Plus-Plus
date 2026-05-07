@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY, Role } from '../decorators/roles.decorator';
+import { RequestWithUser } from '../types/request.interface';
 
 /**
  * Role hierarchy for RBAC.
@@ -39,7 +40,8 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const { user } = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const user = request.user;
 
     if (!user || !user.roles) {
       return false;

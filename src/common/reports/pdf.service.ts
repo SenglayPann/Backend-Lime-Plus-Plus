@@ -1,15 +1,32 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 
+export interface IndividualReportData {
+  name: string;
+  email: string;
+  organization: string;
+  department: string;
+  totalScore: number;
+  breakdown: { name: string; value: number }[];
+  pullRequests: { id: string; title: string; score: number; url: string }[];
+}
+
+export interface ProjectReportData {
+  name: string;
+  organization: string;
+  status: string;
+  members: { name: string; score: number }[];
+}
+
 @Injectable()
 export class PdfService {
-  async generateIndividualReport(data: any): Promise<Buffer> {
+  async generateIndividualReport(data: IndividualReportData): Promise<Buffer> {
     return new Promise((resolve) => {
       const doc = new PDFDocument({ margin: 50, size: 'A4' });
       const chunks: Buffer[] = [];
 
-      (doc as any).on('data', (chunk: Buffer) => chunks.push(chunk));
-      (doc as any).on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
 
       // Header
       this.generateHeader(doc, 'Student Contribution Report');
@@ -39,14 +56,14 @@ export class PdfService {
 
       // Breakdown
       doc.fontSize(14).text('Contribution Breakdown').moveDown(0.5);
-      data.breakdown.forEach((item: any) => {
+      data.breakdown.forEach((item) => {
         doc.fontSize(10).text(`${item.name}: ${item.value} points`);
       });
       doc.moveDown();
 
       // Audit Log / Evidence
       doc.fontSize(14).text('Evidence (Merged PRs)').moveDown(0.5);
-      data.pullRequests.forEach((pr: any) => {
+      data.pullRequests.forEach((pr) => {
         doc.fontSize(10).text(`- [${pr.id}] ${pr.title} (+${pr.score} pts)`, {
           link: pr.url,
         });
@@ -56,13 +73,13 @@ export class PdfService {
     });
   }
 
-  async generateProjectReport(data: any): Promise<Buffer> {
+  async generateProjectReport(data: ProjectReportData): Promise<Buffer> {
     return new Promise((resolve) => {
       const doc = new PDFDocument({ margin: 50, size: 'A4' });
       const chunks: Buffer[] = [];
 
-      (doc as any).on('data', (chunk: Buffer) => chunks.push(chunk));
-      (doc as any).on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
 
       this.generateHeader(doc, 'Project Completion Report');
 
@@ -77,7 +94,7 @@ export class PdfService {
 
       // Team Performance
       doc.fontSize(14).text('Team Performance Leaderboard').moveDown(0.5);
-      data.members.forEach((member: any, index: number) => {
+      data.members.forEach((member, index) => {
         doc
           .fontSize(10)
           .text(`${index + 1}. ${member.name} - ${member.score} points`);

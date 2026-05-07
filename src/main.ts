@@ -52,4 +52,7 @@ async function bootstrap() {
     `📑 Swagger docs available at http://localhost:${process.env.PORT ?? 3001}/api/docs`,
   );
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Failed to start application', err);
+  process.exit(1);
+});

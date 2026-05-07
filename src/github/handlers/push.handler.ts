@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GitHubPushEventPayload } from '../github-payloads';
 
 /**
  * Push Event Handler (spec §10)
@@ -25,8 +26,8 @@ export class PushHandler {
   /**
    * Main entry point for push webhook events
    */
-  async handle(payload: any): Promise<void> {
-    const { ref, repository, commits, sender, before, after } = payload;
+  async handle(payload: GitHubPushEventPayload): Promise<void> {
+    const { ref, repository, commits, sender } = payload;
 
     if (!repository) {
       this.logger.warn('Invalid push payload: missing repository');

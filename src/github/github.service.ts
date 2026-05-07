@@ -2,50 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { graphql } from '@octokit/graphql';
 import { createAppAuth } from '@octokit/auth-app';
-
-export interface GitHubPR {
-  number: number;
-  title: string;
-  url: string;
-  state: string;
-  mergedAt: string | null;
-  createdAt: string;
-  author: {
-    login: string;
-    avatarUrl: string;
-  };
-  additions: number;
-  deletions: number;
-  changedFiles: number;
-  reviews: {
-    nodes: Array<{
-      author: { login: string };
-      state: string;
-      body: string;
-      createdAt: string;
-    }>;
-  };
-}
-
-export interface GitHubProjectItem {
-  id: string;
-  content: {
-    __typename: string;
-    title: string;
-    number?: number;
-    state?: string;
-    assignees?: {
-      nodes: Array<{ login: string }>;
-    };
-  };
-  fieldValues: {
-    nodes: Array<{
-      __typename: string;
-      name?: string;
-      text?: string;
-    }>;
-  };
-}
+import {
+  GitHubPR,
+  GitHubProjectItem,
+  GraphQLRepositoryResponse,
+  GraphQLSinglePRResponse,
+  GraphQLProjectResponse,
+} from './github.types';
 
 @Injectable()
 export class GitHubService {
@@ -150,7 +113,7 @@ export class GitHubService {
     `;
 
     try {
-      const response: any = await client(query, {
+      const response = await client<GraphQLRepositoryResponse>(query, {
         owner,
         repo,
         states: [state],
@@ -206,7 +169,11 @@ export class GitHubService {
     `;
 
     try {
-      const response: any = await client(query, { owner, repo, number });
+      const response = await client<GraphQLSinglePRResponse>(query, {
+        owner,
+        repo,
+        number,
+      });
       return response.repository.pullRequest;
     } catch (error) {
       this.logger.error(
@@ -275,7 +242,10 @@ export class GitHubService {
     `;
 
     try {
-      const response: any = await client(query, { projectId, first });
+      const response = await client<GraphQLProjectResponse>(query, {
+        projectId,
+        first,
+      });
       return response.node.items.nodes;
     } catch (error) {
       this.logger.error(

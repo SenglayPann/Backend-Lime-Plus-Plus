@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role } from '../common/decorators/roles.decorator';
+import { Role } from '../generated/prisma';
 
 export interface GitHubProfile {
   id: string;
@@ -58,7 +58,7 @@ export class UsersService {
     const userRoles = await this.prisma.userRole.findMany({
       where: { userId },
     });
-    return userRoles.map((ur) => ur.role as Role);
+    return userRoles.map((ur) => ur.role);
   }
 
   async getUserWithRoles(userId: string) {
@@ -87,7 +87,7 @@ export class UsersService {
     return this.prisma.userRole.create({
       data: {
         userId,
-        role: role as any,
+        role: role as Role,
         organizationId,
         departmentId,
       },

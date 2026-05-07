@@ -1,8 +1,40 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
+import { Project, Task, ContributionEvent } from '../generated/prisma';
 
-export const DEFAULT_SCORING_CONFIG = {
+export interface ScoringConfig {
+  weights: {
+    PR_MERGED: number;
+    TASK_COMPLETED: number;
+    PR_REVIEW_APPROVED: number;
+  };
+  multipliers: {
+    difficulty: { LOW: number; MEDIUM: number; HIGH: number };
+    timeliness: { early: number; onTime: number; late: number };
+  };
+  caps: {
+    maxScorePerTask: number;
+    maxReviewScorePerPR: number;
+    maxReviewScorePercent: number;
+  };
+}
+
+export interface ScoreBreakdown {
+  PR_MERGED: Array<{ task: string; score: number; metadata: any }>;
+  TASK_COMPLETED: Array<{ task: string; score: number; metadata: any }>;
+  REVIEWS: Array<{ pr: string; score: number }>;
+  OVERRIDES: Array<{ reason: string; score: number }>;
+  [key: string]: any;
+}
+
+export interface ScoreData {
+  totalScore: number;
+  breakdown: ScoreBreakdown;
+  reviewScore: number;
+}
+
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weights: {
     PR_MERGED: 10,
     TASK_COMPLETED: 5,
@@ -39,16 +71,16 @@ export class ScoringService {
       return;
     }
 
-    const config = (project as any).scoringConfig
-      ? (project as any).scoringConfig
-      : DEFAULT_SCORING_CONFIG;
+    const config =
+      (project.scoringConfig as unknown as ScoringConfig) ||
+      DEFAULT_SCORING_CONFIG;
 
     // Fetch all related tasks to evaluate difficulty/timeliness
     const taskIds = project.contributionEvents.map((e) => e.referenceId);
     const tasks = await this.prisma.task.findMany({
       where: { id: { in: taskIds } },
     });
-    const taskMap = new Map(tasks.map((t) => [t.id, t]));
+    const taskMap = new Map<string, Task>(tasks.map((t) => [t.id, t]));
 
     // Fetch all PR reviews to enforce caps
     // For PR_REVIEW_APPROVED, referenceId is the prReview.id
@@ -67,10 +99,11 @@ export class ScoringService {
     });
 
     // We store user scores in a map: userId -> ScoreData
-    const userScores = new Map<string, any>();
-    const getUserScore = (userId: string) => {
-      if (!userScores.has(userId)) {
-        userScores.set(userId, {
+    const userScores = new Map<string, ScoreData>();
+    const getUserScore = (userId: string): ScoreData => {
+      let score = userScores.get(userId);
+      if (!score) {
+        score = {
           totalScore: 0,
           breakdown: {
             PR_MERGED: [],
@@ -79,9 +112,10 @@ export class ScoringService {
             OVERRIDES: [],
           },
           reviewScore: 0, // Track raw review score for capping
-        });
+        };
+        userScores.set(userId, score);
       }
-      return userScores.get(userId);
+      return score;
     };
 
     // Review caps tracker: PR -> Array of review scores
@@ -91,7 +125,8 @@ export class ScoringService {
     for (const event of project.contributionEvents) {
       if (!this.isWithinEvaluationWindow(event, project)) continue;
 
-      const base = config.weights[event.type] ?? 0;
+      const eventType = event.type as keyof ScoringConfig['weights'];
+      const base = config.weights[eventType] ?? 0;
       if (base === 0) continue;
 
       let modifier = 1.0;
@@ -101,7 +136,9 @@ export class ScoringService {
       if (event.type === 'PR_MERGED' || event.type === 'TASK_COMPLETED') {
         const task = taskMap.get(event.referenceId);
         if (task) {
-          modifier *= config.multipliers.difficulty[task.difficulty] ?? 1.0;
+          const difficultyKey =
+            task.difficulty as keyof ScoringConfig['multipliers']['difficulty'];
+          modifier *= config.multipliers.difficulty[difficultyKey] ?? 1.0;
           modifier *= this.getTimelinessModifier(
             task,
             config.multipliers.timeliness,
@@ -116,7 +153,7 @@ export class ScoringService {
         userScore.totalScore += finalScore;
         const key = event.type;
         userScore.breakdown[key].push({
-          task: task?.externalTaskId ?? event.referenceId,
+          task: (task?.externalTaskId as string) ?? event.referenceId,
           score: finalScore,
           metadata: { difficulty: task?.difficulty, base },
         });
@@ -168,7 +205,7 @@ export class ScoringService {
     }
 
     // 3. Apply Total Review Cap (e.g. 20% of total score)
-    for (const [userId, userScore] of userScores.entries()) {
+    for (const userScore of userScores.values()) {
       if (userScore.totalScore > 0 && userScore.reviewScore > 0) {
         const maxReviewAllowed = Math.floor(
           userScore.totalScore * config.caps.maxReviewScorePercent,
@@ -211,20 +248,33 @@ export class ScoringService {
     );
   }
 
-  private isWithinEvaluationWindow(event: any, project: any): boolean {
-    if (project.evalStart && event.createdAt < project.evalStart) return false;
-    if (project.evalEnd && event.createdAt > project.evalEnd) return false;
+  private isWithinEvaluationWindow(
+    event: ContributionEvent,
+    project: Project,
+  ): boolean {
+    const createdAt = event.createdAt;
+    const evalStart = project.evalStart;
+    const evalEnd = project.evalEnd;
+
+    if (evalStart && createdAt < evalStart) return false;
+    if (evalEnd && createdAt > evalEnd) return false;
     return true;
   }
 
-  private getTimelinessModifier(task: any, conf: any): number {
-    if (!task.dueDate || !task.completedAt) return 1.0;
+  private getTimelinessModifier(
+    task: Task,
+    conf: ScoringConfig['multipliers']['timeliness'],
+  ): number {
+    const dueDate = task.dueDate;
+    const completedAt = task.completedAt;
+
+    if (!dueDate || !completedAt) return 1.0;
 
     // Zero out time to compare strictly by day
-    const due = new Date(task.dueDate);
+    const due = new Date(dueDate);
     due.setHours(0, 0, 0, 0);
 
-    const completed = new Date(task.completedAt);
+    const completed = new Date(completedAt);
     completed.setHours(0, 0, 0, 0);
 
     const timeDiff = completed.getTime() - due.getTime();

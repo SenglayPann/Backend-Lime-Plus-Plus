@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Project } from '../../generated/prisma';
+import {
+  GitHubProjectV2ItemEventPayload,
+  GitHubProjectV2ItemPayload,
+  GitHubUserPayload,
+} from '../github-payloads';
 
 /**
  * Task Sync Handler (spec §8)
@@ -24,7 +30,7 @@ export class TaskSyncHandler {
   /**
    * Main entry point for projects_v2_item webhook events
    */
-  async handle(payload: any): Promise<void> {
+  async handle(payload: GitHubProjectV2ItemEventPayload): Promise<void> {
     const { action, projects_v2_item, sender } = payload;
 
     if (!projects_v2_item) {
@@ -59,7 +65,7 @@ export class TaskSyncHandler {
         await this.handleEdited(project, projects_v2_item, sender);
         break;
       case 'deleted':
-        await this.handleDeleted(project, projects_v2_item, sender);
+        await this.handleDeleted(project, projects_v2_item);
         break;
       default:
         this.logger.debug(`Ignoring projects_v2_item action: ${action}`);
@@ -70,9 +76,9 @@ export class TaskSyncHandler {
    * Handle new project item created → create task
    */
   private async handleCreated(
-    project: any,
-    item: any,
-    sender: any,
+    project: Project,
+    item: GitHubProjectV2ItemPayload,
+    sender: GitHubUserPayload,
   ): Promise<void> {
     const contentNodeId = item.content_node_id;
     if (!contentNodeId) {
@@ -136,9 +142,11 @@ export class TaskSyncHandler {
    * Handle project item edited → sync field changes
    */
   private async handleEdited(
-    project: any,
-    item: any,
-    sender: any,
+    project: Project,
+    item: GitHubProjectV2ItemPayload & {
+      changes?: GitHubProjectV2ItemEventPayload['changes'];
+    },
+    sender: GitHubUserPayload,
   ): Promise<void> {
     const externalTaskId = this.generateTaskId(item);
 
@@ -231,9 +239,8 @@ export class TaskSyncHandler {
    * Handle project item deleted → soft-delete task
    */
   private async handleDeleted(
-    project: any,
-    item: any,
-    sender: any,
+    project: Project,
+    item: GitHubProjectV2ItemPayload,
   ): Promise<void> {
     const externalTaskId = this.generateTaskId(item);
 
@@ -270,7 +277,7 @@ export class TaskSyncHandler {
    * Uses content_node_id as a stable identifier.
    * When the content is an Issue, we'll use TASK-<node_id_hash> format.
    */
-  private generateTaskId(item: any): string {
+  private generateTaskId(item: GitHubProjectV2ItemPayload): string {
     // Use the content_node_id if available, otherwise use node_id
     const nodeId = item.content_node_id ?? item.node_id;
     // Create a short, deterministic ID from the node

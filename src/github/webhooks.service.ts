@@ -9,11 +9,18 @@ import {
   ProjectMetadataHandler,
   PushHandler,
 } from './handlers';
+import {
+  GitHubPullRequestEventPayload,
+  GitHubPullRequestReviewEventPayload,
+  GitHubProjectV2ItemEventPayload,
+  GitHubProjectV2EventPayload,
+  GitHubPushEventPayload,
+} from './github-payloads';
 
 export interface WebhookEvent {
   event: string;
   deliveryId: string;
-  payload: any;
+  payload: Record<string, unknown>;
 }
 
 /**
@@ -88,7 +95,8 @@ export class WebhooksService {
         deliveryId: event.deliveryId,
         platform: 'GITHUB',
         eventType: event.event,
-        payload: event.payload,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        payload: event.payload as any,
       },
     });
   }
@@ -113,19 +121,29 @@ export class WebhooksService {
 
     switch (event.event) {
       case 'pull_request':
-        await this.prLifecycleHandler.handle(event.payload);
+        await this.prLifecycleHandler.handle(
+          event.payload as unknown as GitHubPullRequestEventPayload,
+        );
         break;
       case 'pull_request_review':
-        await this.prReviewHandler.handle(event.payload);
+        await this.prReviewHandler.handle(
+          event.payload as unknown as GitHubPullRequestReviewEventPayload,
+        );
         break;
       case 'projects_v2_item':
-        await this.taskSyncHandler.handle(event.payload);
+        await this.taskSyncHandler.handle(
+          event.payload as unknown as GitHubProjectV2ItemEventPayload,
+        );
         break;
       case 'projects_v2':
-        await this.projectMetadataHandler.handle(event.payload);
+        await this.projectMetadataHandler.handle(
+          event.payload as unknown as GitHubProjectV2EventPayload,
+        );
         break;
       case 'push':
-        await this.pushHandler.handle(event.payload);
+        await this.pushHandler.handle(
+          event.payload as unknown as GitHubPushEventPayload,
+        );
         break;
       case 'ping':
         this.logger.log(

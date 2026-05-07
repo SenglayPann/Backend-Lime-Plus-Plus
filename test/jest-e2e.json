@@ -7,7 +7,7 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "transformIgnorePatterns": [
-    "node_modules/(?!(@octokit|universal-user-agent|before-after-hook|is-plain-object)/)"
+    "node_modules/(?!(@octokit|universal-user-agent|before-after-hook|is-plain-object|universal-github-app-jwt)/)"
   ],
   "moduleNameMapper": {
     "^src/(.*)$": "<rootDir>/../src/$1"

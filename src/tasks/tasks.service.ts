@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AssignTaskDto } from './dto/assign-task.dto';
 import { TaskStatus } from '../generated/prisma';
 
 @Injectable()
@@ -12,7 +11,7 @@ export class TasksService {
       where: {
         projectId: projectId || undefined,
         assigneeId: assigneeId || undefined,
-        status: (status as any) || undefined,
+        status: (status as TaskStatus) || undefined,
       },
       include: {
         project: true,
@@ -32,7 +31,7 @@ export class TasksService {
   }
 
   async assignTask(id: string, assigneeId: string) {
-    const task = await this.findOne(id);
+    await this.findOne(id);
 
     return this.prisma.task.update({
       where: { id },

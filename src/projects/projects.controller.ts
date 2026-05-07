@@ -20,6 +20,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
@@ -53,23 +54,28 @@ export class ProjectsController {
   @Post(':id/lock')
   @Roles(Role.DEPARTMENT_MANAGER)
   @ApiOperation({ summary: 'Lock project for grading (Dept Manager+)' })
-  async lock(@Param('id') id: string, @Request() req: any) {
+  async lock(@Param('id') id: string, @Request() req: RequestWithUser) {
     return this.projectsService.lockProject(id, req.user.id);
   }
 
   @Post(':id/tasks/sync')
   @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Manual sync tasks from GitHub (Project Manager+)' })
-  async syncTasks(@Param('id') id: string, @Request() req: any) {
+  async syncTasks(@Param('id') id: string, @Request() req: RequestWithUser) {
     // In a real app, the accessToken would come from the user's session or GitHub App token
     // For now, we'll assume it's passed or available.
     // We might need to fetch it from the database or GitHubService.
 
     // Note: The spec says this expects an accessToken.
     // If not provided in body, we might need to get it from the user's OAuth record.
+    const accessTokenHeader = req.headers['x-github-token'];
     const accessToken =
-      req.headers['x-github-token'] || process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+      (Array.isArray(accessTokenHeader)
+        ? accessTokenHeader[0]
+        : accessTokenHeader) ||
+      process.env.GITHUB_PERSONAL_ACCESS_TOKEN ||
+      '';
 
-    return this.projectsService.syncTasks(id, accessToken, req.user.id);
+    return this.projectsService.syncTasks(id, accessToken);
   }
 }

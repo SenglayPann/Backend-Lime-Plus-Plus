@@ -20,7 +20,8 @@ export class WebhookProcessor extends WorkerHost {
   }
 
   async process(job: Job<WebhookEvent>): Promise<void> {
-    const { event, deliveryId, payload } = job.data;
+    const data = job.data;
+    const { event, deliveryId, payload } = data;
 
     this.logger.log(
       `Processing webhook job: ${event} (delivery: ${deliveryId})`,

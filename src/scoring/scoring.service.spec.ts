@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ScoringService, DEFAULT_SCORING_CONFIG } from './scoring.service';
+import { ScoringService } from './scoring.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 
@@ -78,7 +78,7 @@ describe('ScoringService', () => {
         expect.objectContaining({
           create: expect.objectContaining({
             totalScore: 15,
-          }),
+          }) as unknown,
         }),
       );
     });
@@ -128,12 +128,18 @@ describe('ScoringService', () => {
       );
       expect(mockPrismaService.contributionScore.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({ userId: 'u1', totalScore: 10 }),
+          create: expect.objectContaining({
+            userId: 'u1',
+            totalScore: 10,
+          }) as unknown,
         }),
       );
       expect(mockPrismaService.contributionScore.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({ userId: 'u2', totalScore: 15 }),
+          create: expect.objectContaining({
+            userId: 'u2',
+            totalScore: 15,
+          }) as unknown,
         }),
       );
     });
@@ -174,7 +180,7 @@ describe('ScoringService', () => {
 
       expect(mockPrismaService.contributionScore.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({ totalScore: 5 }),
+          create: expect.objectContaining({ totalScore: 5 }) as unknown,
         }),
       );
     });
@@ -228,7 +234,7 @@ describe('ScoringService', () => {
       // Final total score = 13.
       expect(mockPrismaService.contributionScore.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          update: expect.objectContaining({ totalScore: 13 }),
+          update: expect.objectContaining({ totalScore: 13 }) as unknown,
         }),
       );
     });
@@ -256,7 +262,7 @@ describe('ScoringService', () => {
             delta: 50,
             reason: 'Bonus',
             overriddenBy: 'admin1',
-          }),
+          }) as unknown,
         }),
       );
       expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
@@ -264,7 +270,7 @@ describe('ScoringService', () => {
           data: expect.objectContaining({
             action: 'SCORE_OVERRIDE',
             actorId: 'admin1',
-          }),
+          }) as unknown,
         }),
       );
 

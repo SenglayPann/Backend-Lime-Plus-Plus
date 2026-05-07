@@ -11,12 +11,12 @@ jest.mock('@octokit/auth-app', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { Job } from 'bullmq';
 import { WebhookProcessor } from './webhook.processor';
-import { WebhooksService } from './webhooks.service';
+import { WebhooksService, WebhookEvent } from './webhooks.service';
 
 describe('WebhookProcessor', () => {
   let processor: WebhookProcessor;
-  let webhooksService: WebhooksService;
 
   const mockWebhooksService = {
     routeEvent: jest.fn(),
@@ -32,7 +32,6 @@ describe('WebhookProcessor', () => {
     }).compile();
 
     processor = module.get<WebhookProcessor>(WebhookProcessor);
-    webhooksService = module.get<WebhooksService>(WebhooksService);
     jest.clearAllMocks();
   });
 
@@ -45,9 +44,9 @@ describe('WebhookProcessor', () => {
       data: {
         event: 'pull_request',
         deliveryId: 'del-123',
-        payload: { action: 'opened' },
+        payload: { action: 'opened' } as Record<string, unknown>,
       },
-    } as any;
+    } as unknown as Job<WebhookEvent>;
 
     await processor.process(job);
 
@@ -64,9 +63,9 @@ describe('WebhookProcessor', () => {
       data: {
         event: 'pull_request',
         deliveryId: 'del-456',
-        payload: { action: 'opened' },
+        payload: { action: 'opened' } as Record<string, unknown>,
       },
-    } as any;
+    } as unknown as Job<WebhookEvent>;
 
     mockWebhooksService.routeEvent.mockRejectedValue(new Error('DB error'));
 

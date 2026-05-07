@@ -15,6 +15,8 @@ import { ProjectMetadataHandler } from './project-metadata.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 
+import { GitHubProjectV2EventPayload } from '../github-payloads';
+
 describe('ProjectMetadataHandler', () => {
   let handler: ProjectMetadataHandler;
 
@@ -41,9 +43,20 @@ describe('ProjectMetadataHandler', () => {
   });
 
   const basePayload = {
-    projects_v2: { node_id: 'pn1' },
+    action: 'edited',
+    projects_v2: {
+      node_id: 'pn1',
+      id: 1,
+      title: 'Project',
+      owner: { id: 1, login: 'owner' },
+      creator: { id: 1, login: 'creator' },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      number: 1,
+    },
     sender: { id: 1, login: 'user1' },
-  };
+    organization: { id: 1, login: 'org' },
+  } as unknown as GitHubProjectV2EventPayload;
 
   it('should sync project title on edit', async () => {
     mockPrismaService.project.findFirst.mockResolvedValue({
@@ -59,7 +72,7 @@ describe('ProjectMetadataHandler', () => {
         title: 'New Title',
         changes: { title: { to: 'New Title' } },
       },
-    };
+    } as GitHubProjectV2EventPayload;
 
     await handler.handle(payload);
 
@@ -85,7 +98,7 @@ describe('ProjectMetadataHandler', () => {
 
     expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ action: 'PROJECT_LOCK' }),
+        data: expect.objectContaining({ action: 'PROJECT_LOCK' }) as unknown,
       }),
     );
   });
@@ -98,12 +111,12 @@ describe('ProjectMetadataHandler', () => {
 
     expect(mockPrismaService.project.update).toHaveBeenCalledWith({
       where: { id: 'p1' },
-      data: expect.objectContaining({ status: 'LOCKED' }),
+      data: expect.objectContaining({ status: 'LOCKED' }) as unknown,
     });
 
     expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ action: 'PROJECT_LOCK' }),
+        data: expect.objectContaining({ action: 'PROJECT_LOCK' }) as unknown,
       }),
     );
   });

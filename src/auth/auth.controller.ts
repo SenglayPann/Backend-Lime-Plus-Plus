@@ -11,11 +11,12 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import type { Response, Request } from 'express';
+import type { Response } from 'express';
 import { AuthService, TokenResponse } from './auth.service';
 import { JwtAuthGuard } from '../common/guards';
 import { CurrentUser } from '../common/decorators';
 import { ConfigService } from '@nestjs/config';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 interface RefreshTokenDto {
   refreshToken: string;
@@ -42,7 +43,7 @@ export class AuthController {
    */
   @Get('github/callback')
   @UseGuards(AuthGuard('github'))
-  async githubCallback(@Req() req: any, @Res() res: any) {
+  async githubCallback(@Req() req: RequestWithUser, @Res() res: Response) {
     const tokens = await this.authService.login(req.user);
 
     // For development, redirect with tokens in query params
@@ -87,7 +88,7 @@ export class AuthController {
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  getProfile(@CurrentUser() user: any) {
+  getProfile(@CurrentUser() user: RequestWithUser['user']) {
     return {
       id: user.id,
       email: user.email,

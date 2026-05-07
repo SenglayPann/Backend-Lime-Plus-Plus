@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { Parser } from 'json2csv';
 import { ProjectStatus } from '../../generated/prisma';
+import { ScoreBreakdown } from '../../scoring/scoring.service';
 
 @Injectable()
 export class ReportsService {
@@ -41,10 +42,10 @@ export class ReportsService {
       include: { task: true },
     });
 
-    const breakdownData = scoreInfo.breakdown as any;
+    const breakdownData = scoreInfo.breakdown as unknown as ScoreBreakdown;
     const reportData = {
-      name: scoreInfo.user.name || scoreInfo.user.githubUsername,
-      email: scoreInfo.user.email,
+      name: scoreInfo.user.name || scoreInfo.user.githubUsername || '',
+      email: scoreInfo.user.email || 'N/A',
       organization: scoreInfo.project.department.organization.name,
       department: scoreInfo.project.department.name,
       totalScore: scoreInfo.totalScore,
@@ -64,7 +65,7 @@ export class ReportsService {
         title: pr.task?.title || 'Unknown Task',
         score:
           (breakdownData.PR_MERGED || []).find(
-            (p: any) => p.task === pr.task?.externalTaskId,
+            (p) => p.task === pr.task?.externalTaskId,
           )?.score || 0,
         url: `https://github.com/${scoreInfo.project.repository}/pull/${pr.externalPrId}`,
       })),
@@ -93,7 +94,7 @@ export class ReportsService {
       status:
         project.status === ProjectStatus.LOCKED ? 'LOCKED (FINAL)' : 'ACTIVE',
       members: project.contributionScores.map((cs) => ({
-        name: cs.user.name || cs.user.githubUsername,
+        name: cs.user.name || cs.user.githubUsername || '',
         score: cs.totalScore,
       })),
     };
