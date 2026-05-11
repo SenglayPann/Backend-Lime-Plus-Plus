@@ -109,7 +109,10 @@ export class ProjectsService {
         actorRoles,
         departmentId,
       ),
-      include: { department: true },
+      include: {
+        department: true,
+        _count: { select: { members: true } },
+      },
     });
   }
 
