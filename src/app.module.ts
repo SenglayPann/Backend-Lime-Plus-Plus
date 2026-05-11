@@ -15,6 +15,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { PullRequestsModule } from './pull-requests/pull-requests.module';
 import { AuditModule } from './common/audit/audit.module';
 import { ReportsModule } from './common/reports/reports.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ReportsModule } from './common/reports/reports.module';
     PullRequestsModule,
     AuditModule,
     ReportsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],

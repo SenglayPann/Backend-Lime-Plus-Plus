@@ -82,4 +82,117 @@ describe('UsersService', () => {
       });
     });
   });
+
+  describe('findById', () => {
+    it('should return a user by id', async () => {
+      const mockUser = { id: 'user-1' };
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+
+      const result = await service.findById('user-1');
+
+      expect(result).toEqual(mockUser);
+      expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+      });
+    });
+  });
+
+  describe('findByGitHubId', () => {
+    it('should return a user by github ID', async () => {
+      const mockUser = { id: 'user-1', githubUserId: 'git-123' };
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+
+      const result = await service.findByGitHubId('git-123');
+
+      expect(result).toEqual(mockUser);
+      expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+        where: { githubUserId: 'git-123' },
+      });
+    });
+  });
+
+  describe('getUserRoles', () => {
+    it('should return an array of roles for a user', async () => {
+      mockPrismaService.userRole.findMany.mockResolvedValue([
+        { role: 'ADMIN' },
+        { role: 'PROJECT_MEMBER' },
+      ]);
+
+      const result = await service.getUserRoles('user-1');
+
+      expect(result).toEqual(['ADMIN', 'PROJECT_MEMBER']);
+      expect(mockPrismaService.userRole.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
+    });
+  });
+
+  describe('getUserWithRoles', () => {
+    it('should return null if user not found', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+
+      const result = await service.getUserWithRoles('user-unknown');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return user with roles', async () => {
+      const mockUser = { id: 'user-1', name: 'Test' };
+      const mockRoles = [{ id: 'role-1', role: 'ADMIN' }];
+
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+      mockPrismaService.userRole.findMany.mockResolvedValue(mockRoles);
+
+      const result = await service.getUserWithRoles('user-1');
+
+      expect(result).toEqual({ ...mockUser, roles: mockRoles });
+    });
+  });
+
+  describe('assignRole', () => {
+    it('should assign a role to a user', async () => {
+      const newRole = { id: 'role-1', userId: 'user-1', role: 'ADMIN' };
+      mockPrismaService.userRole.create.mockResolvedValue(newRole);
+
+      const result = await service.assignRole('user-1', 'ADMIN', 'org-1', 'dept-1');
+
+      expect(result).toEqual(newRole);
+      expect(mockPrismaService.userRole.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'user-1',
+          role: 'ADMIN',
+          organizationId: 'org-1',
+          departmentId: 'dept-1',
+        },
+      });
+    });
+  });
+
+  describe('removeRole', () => {
+    it('should remove a role', async () => {
+      const deletedRole = { id: 'role-1' };
+      mockPrismaService.userRole.delete.mockResolvedValue(deletedRole);
+
+      const result = await service.removeRole('role-1');
+
+      expect(result).toEqual(deletedRole);
+      expect(mockPrismaService.userRole.delete).toHaveBeenCalledWith({
+        where: { id: 'role-1' },
+      });
+    });
+  });
+
+  describe('findAll', () => {
+    it('should return all users with roles', async () => {
+      const mockUsers = [{ id: 'user-1', userRoles: [] }];
+      mockPrismaService.user.findMany.mockResolvedValue(mockUsers);
+
+      const result = await service.findAll();
+
+      expect(result).toEqual(mockUsers);
+      expect(mockPrismaService.user.findMany).toHaveBeenCalledWith({
+        include: { userRoles: true },
+      });
+    });
+  });
 });

@@ -28,7 +28,7 @@ interface CustomRequest extends Request {
  * Endpoint: POST /api/webhooks/github
  *   (spec says /api/webhooks/github, NOT /api/v1/webhooks/github)
  */
-@Controller('api/webhooks')
+@Controller('webhooks')
 export class WebhooksController {
   private readonly logger = new Logger(WebhooksController.name);
 
