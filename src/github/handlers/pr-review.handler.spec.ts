@@ -92,6 +92,7 @@ describe('PrReviewHandler', () => {
     mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1' });
     mockPrismaService.pullRequest.findUnique.mockResolvedValue({ id: 'pr1' });
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u2' });
+    mockPrismaService.prReview.create.mockResolvedValue({ id: 'r1' });
 
     await handler.handle(validPayload);
 
@@ -105,6 +106,7 @@ describe('PrReviewHandler', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           type: 'PR_REVIEW_APPROVED',
+          referenceId: 'r1',
           score: 3,
         }) as unknown,
       }),
@@ -115,6 +117,7 @@ describe('PrReviewHandler', () => {
     mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1' });
     mockPrismaService.pullRequest.findUnique.mockResolvedValue({ id: 'pr1' });
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u2' });
+    mockPrismaService.prReview.create.mockResolvedValue({ id: 'r1' });
 
     const payload = {
       ...validPayload,

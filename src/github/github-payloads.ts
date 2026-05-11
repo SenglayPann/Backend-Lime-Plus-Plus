@@ -1,7 +1,7 @@
 export interface GitHubUserPayload {
   id: number;
   login: string;
-  avatar_url: string;
+  avatar_url?: string;
 }
 
 export interface GitHubRepositoryPayload {
@@ -74,9 +74,16 @@ export interface GitHubProjectV2ItemPayload {
   id: string;
   node_id: string;
   project_node_id: string;
-  content_node_id: string;
+  content_node_id?: string;
   content_type: string;
   creator: GitHubUserPayload;
+  content?: {
+    title?: string;
+    number?: number;
+    assignees?: {
+      nodes: GitHubUserPayload[];
+    };
+  };
   created_at: string;
   updated_at: string;
 }

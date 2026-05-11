@@ -3,10 +3,12 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  BadGatewayException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
+import type { GitHubProjectItem } from '../github/github.types';
 import { UsersService } from '../users/users.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { ProjectStatus, AuditAction, TaskStatus } from '../generated/prisma';
@@ -96,7 +98,11 @@ export class ProjectsService {
     }
   }
 
-  async findAll(departmentId: string | undefined, actorId: string, actorRoles: Role[]) {
+  async findAll(
+    departmentId: string | undefined,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
     return this.prisma.project.findMany({
       where: this.projectAccessService.buildAccessibleProjectWhere(
         actorId,
@@ -178,34 +184,42 @@ export class ProjectsService {
       throw new ConflictException('Project is not linked to a GitHub Project');
     }
 
-    const items = await this.githubService.getProjectItems(
-      project.externalProjectId,
-      accessToken,
-    );
+    const resolvedAccessToken =
+      accessToken ||
+      (await this.usersService.getGitHubAccessToken(actorId)) ||
+      this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
+
+    if (!resolvedAccessToken) {
+      throw new BadRequestException(
+        'Cannot sync Kanban because Lime++ has no GitHub token for this user. Sign out and sign in again with GitHub project permissions, or configure GITHUB_PERSONAL_ACCESS_TOKEN on the backend.',
+      );
+    }
+
+    let items: GitHubProjectItem[];
+    try {
+      items = await this.githubService.getProjectItems(
+        project.externalProjectId,
+        resolvedAccessToken,
+      );
+    } catch {
+      throw new BadGatewayException(
+        'GitHub Project V2 sync failed. Check that the token can access this repository and Project V2 board with read:project permissions.',
+      );
+    }
 
     const results = await Promise.all(
       items.map(async (item) => {
         // Skip items without a title (e.g. empty rows)
         if (!item.content?.title) return null;
 
-        // Try to find status from field values
+        const externalTaskId = this.getTaskCode(item);
+
         const statusValue = item.fieldValues.nodes.find(
-          (n) => n.name === 'Status',
+          (n) => n.field?.name === 'Status',
         )?.name;
 
-        // Find assignee
-        const assigneeLogin = item.content.assignees?.nodes[0]?.login;
-        let assigneeId = null;
-
-        if (assigneeLogin) {
-          const user = await this.prisma.user.findUnique({
-            where: { githubUserId: assigneeLogin }, // Assuming githubUserId is the login
-          });
-          assigneeId = user?.id;
-        }
-
-        // Only upsert if we have an assignee (or handle null assignee according to business rules)
-        // For sync, we might just create them even without assignee and let PM assign them later
+        const assignee = await this.resolveProjectItemAssignee(item);
+        if (!assignee) return null;
 
         // Map GitHub status to TaskStatus
         let taskStatus: TaskStatus = TaskStatus.TODO;
@@ -216,20 +230,20 @@ export class ProjectsService {
           where: {
             projectId_externalTaskId: {
               projectId: id,
-              externalTaskId: item.id,
+              externalTaskId,
             },
           },
           update: {
             title: item.content.title,
             status: taskStatus,
-            assigneeId: assigneeId || undefined, // Don't overwrite with null if not found?
+            assigneeId: assignee.id,
           },
           create: {
             projectId: id,
-            externalTaskId: item.id,
+            externalTaskId,
             title: item.content.title,
             status: taskStatus,
-            assigneeId: assigneeId || 'unassigned', // We might need a placeholder or allow null
+            assigneeId: assignee.id,
           },
         });
       }),
@@ -238,5 +252,46 @@ export class ProjectsService {
     return {
       syncedCount: results.filter((r) => r !== null).length,
     };
+  }
+
+  private getTaskCode(item: GitHubProjectItem): string {
+    const explicitCode = item.fieldValues.nodes
+      .map((node) => node.text?.trim())
+      .find((text): text is string =>
+        Boolean(text?.match(/^TASK-[A-Za-z0-9_-]+$/i)),
+      );
+
+    if (explicitCode) return explicitCode.toUpperCase();
+    if (item.content.number) return `TASK-${item.content.number}`;
+    return `TASK-${item.id}`;
+  }
+
+  private async resolveProjectItemAssignee(item: GitHubProjectItem) {
+    const assignee = item.content.assignees?.nodes[0];
+    if (!assignee) return null;
+
+    const githubUserId =
+      assignee.databaseId !== null && assignee.databaseId !== undefined
+        ? String(assignee.databaseId)
+        : assignee.id;
+
+    if (!githubUserId) return null;
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ githubUserId }, { githubUsername: assignee.login }],
+      },
+    });
+
+    if (existing) return existing;
+
+    return this.prisma.user.create({
+      data: {
+        githubUserId,
+        githubUsername: assignee.login,
+        name: assignee.login,
+        avatarUrl: assignee.avatarUrl ?? null,
+      },
+    });
   }
 }

@@ -196,12 +196,20 @@ async function main() {
   await prisma.projectMember.createMany({
     data: [
       // Project 1 members
-      { projectId: project1.id, userId: managerUser.id, role: 'PROJECT_MANAGER' },
+      {
+        projectId: project1.id,
+        userId: managerUser.id,
+        role: 'PROJECT_MANAGER',
+      },
       { projectId: project1.id, userId: student1.id, role: 'PROJECT_MEMBER' },
       { projectId: project1.id, userId: student2.id, role: 'PROJECT_MEMBER' },
       { projectId: project1.id, userId: student3.id, role: 'PROJECT_MEMBER' },
       // Project 2 members
-      { projectId: project2.id, userId: managerUser.id, role: 'PROJECT_MANAGER' },
+      {
+        projectId: project2.id,
+        userId: managerUser.id,
+        role: 'PROJECT_MANAGER',
+      },
       { projectId: project2.id, userId: student2.id, role: 'PROJECT_MEMBER' },
       { projectId: project2.id, userId: student4.id, role: 'PROJECT_MEMBER' },
     ],
@@ -216,7 +224,8 @@ async function main() {
         projectId: project1.id,
         externalTaskId: 'TASK-001',
         title: 'Setup project repository and CI/CD',
-        description: 'Initialize the repository with proper structure and configure GitHub Actions',
+        description:
+          'Initialize the repository with proper structure and configure GitHub Actions',
         assigneeId: student1.id,
         status: 'DONE',
         difficulty: 'MEDIUM',
@@ -353,56 +362,50 @@ async function main() {
 
   console.log('✅ Created PR reviews');
 
+  const approvedReviews = await prisma.prReview.findMany({
+    where: {
+      state: 'APPROVED',
+      pullRequestId: { in: pullRequests.map((pr) => pr.id) },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
   // Create Contribution Events
   await prisma.contributionEvent.createMany({
     data: [
       {
         projectId: project1.id,
         userId: student1.id,
-        type: 'PR_MERGED',
-        referenceId: pullRequests[0].id,
-        score: 10,
-      },
-      {
-        projectId: project1.id,
-        userId: student1.id,
         type: 'TASK_COMPLETED',
         referenceId: tasks[0].id,
-        score: 5,
-      },
-      {
-        projectId: project1.id,
-        userId: student2.id,
-        type: 'PR_MERGED',
-        referenceId: pullRequests[1].id,
-        score: 15, // Higher score due to HIGH difficulty
+        score: 10,
       },
       {
         projectId: project1.id,
         userId: student2.id,
         type: 'TASK_COMPLETED',
         referenceId: tasks[1].id,
-        score: 5,
+        score: 10,
       },
       {
         projectId: project1.id,
         userId: student2.id,
         type: 'PR_REVIEW_APPROVED',
-        referenceId: pullRequests[0].id,
+        referenceId: approvedReviews[0].id,
         score: 3,
       },
       {
         projectId: project1.id,
         userId: student1.id,
         type: 'PR_REVIEW_APPROVED',
-        referenceId: pullRequests[1].id,
+        referenceId: approvedReviews[1].id,
         score: 3,
       },
       {
         projectId: project1.id,
         userId: student3.id,
         type: 'PR_REVIEW_APPROVED',
-        referenceId: pullRequests[1].id,
+        referenceId: approvedReviews[2].id,
         score: 3,
       },
     ],
@@ -416,21 +419,23 @@ async function main() {
       {
         projectId: project1.id,
         userId: student1.id,
-        totalScore: 18,
+        totalScore: 13,
         breakdown: {
-          prMerged: 10,
-          taskCompleted: 5,
-          prReviewApproved: 3,
+          PR_MERGED: [],
+          TASK_COMPLETED: [{ task: 'TASK-001', score: 10 }],
+          REVIEWS: [{ pr: 'PR-2', score: 3 }],
+          OVERRIDES: [],
         },
       },
       {
         projectId: project1.id,
         userId: student2.id,
-        totalScore: 23,
+        totalScore: 18,
         breakdown: {
-          prMerged: 15,
-          taskCompleted: 5,
-          prReviewApproved: 3,
+          PR_MERGED: [],
+          TASK_COMPLETED: [{ task: 'TASK-002', score: 15 }],
+          REVIEWS: [{ pr: 'PR-1', score: 3 }],
+          OVERRIDES: [],
         },
       },
       {
@@ -438,9 +443,10 @@ async function main() {
         userId: student3.id,
         totalScore: 3,
         breakdown: {
-          prMerged: 0,
-          taskCompleted: 0,
-          prReviewApproved: 3,
+          PR_MERGED: [],
+          TASK_COMPLETED: [],
+          REVIEWS: [{ pr: 'PR-2', score: 3 }],
+          OVERRIDES: [],
         },
       },
     ],

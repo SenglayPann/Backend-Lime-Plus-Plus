@@ -71,6 +71,9 @@ describe('PrLifecycleHandler', () => {
     expect(handler.parseTaskId('No task here', 'But body has TASK-456')).toBe(
       'TASK-456',
     );
+    expect(handler.parseTaskId('Update [TASK-ABC_123]', null)).toBe(
+      'TASK-ABC_123',
+    );
     expect(handler.parseTaskId('Missing', 'Also missing')).toBeNull();
   });
 
@@ -153,6 +156,95 @@ describe('PrLifecycleHandler', () => {
           data: expect.objectContaining({ action: 'TASK_REASSIGN' }) as unknown,
         }),
       );
+    });
+  });
+
+  describe('handleClosed', () => {
+    const mergedPayload: GitHubPullRequestEventPayload = {
+      action: 'closed',
+      pull_request: {
+        id: 1,
+        node_id: 'node-1',
+        number: 1,
+        title: '[TASK-42] Hello',
+        body: null,
+        user: { id: 101, login: 'octocat', avatar_url: 'url' },
+        html_url: 'pr-url',
+        head: { sha: 'abc', ref: 'head', label: 'head', repo: { id: 1 } },
+        base: { sha: 'def', ref: 'base', label: 'base', repo: { id: 1 } },
+        state: 'closed',
+        merged: true,
+        merged_at: '2026-05-01T00:00:00Z',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      repository: {
+        id: 1,
+        node_id: 'node-repo',
+        full_name: 'test/repo',
+        owner: { id: 1, login: 'test' },
+        name: 'repo',
+        private: false,
+        html_url: 'repo-url',
+      },
+    } as unknown as GitHubPullRequestEventPayload;
+
+    it('should emit one TASK_COMPLETED event for a valid merged PR', async () => {
+      mockPrismaService.project.findFirst.mockResolvedValue({
+        id: 'p1',
+        status: 'ACTIVE',
+      });
+      mockPrismaService.pullRequest.findUnique.mockResolvedValue({
+        id: 'pr1',
+        taskId: 't1',
+        authorId: 'u1',
+        task: {
+          id: 't1',
+          externalTaskId: 'TASK-42',
+          assigneeId: 'u1',
+          status: 'IN_PROGRESS',
+          completedAt: null,
+        },
+      });
+      mockPrismaService.pullRequest.findFirst.mockResolvedValue(null);
+
+      await handler.handle(mergedPayload);
+
+      expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'TASK_COMPLETED',
+            referenceId: 't1',
+            score: 10,
+          }) as unknown,
+        }),
+      );
+    });
+
+    it('should not score a merged PR authored by the wrong assignee', async () => {
+      mockPrismaService.project.findFirst.mockResolvedValue({
+        id: 'p1',
+        status: 'ACTIVE',
+      });
+      mockPrismaService.pullRequest.findUnique.mockResolvedValue({
+        id: 'pr1',
+        taskId: 't1',
+        authorId: 'u1',
+        task: {
+          id: 't1',
+          externalTaskId: 'TASK-42',
+          assigneeId: 'u2',
+          status: 'IN_PROGRESS',
+          completedAt: null,
+        },
+      });
+
+      await handler.handle(mergedPayload);
+
+      expect(mockPrismaService.contributionEvent.create).not.toHaveBeenCalled();
     });
   });
 });

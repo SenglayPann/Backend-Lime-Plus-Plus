@@ -17,7 +17,7 @@ import {
  *
  * Processing pipeline:
  *   Extract PR metadata → Parse task ID → Validate task & assignee →
- *   Persist PR → If merged → emit contribution events
+ *   Persist PR → If merged → emit one task-completion contribution event
  *
  * Strict Mode Rules:
  *   - Missing task ID → PR persisted with taskId: null (INVALID)
@@ -283,8 +283,13 @@ export class PrLifecycleHandler {
         },
       });
 
-      if (isMerged && task) {
-        await this.emitMergeContributionEvents(project, task, author.id);
+      if (isMerged && task && task.assigneeId === author.id) {
+        const mergedAt = pr.merged_at ? new Date(pr.merged_at) : new Date();
+        await this.emitTaskCompletionEvent(project, task, author.id, mergedAt);
+      } else if (isMerged && task) {
+        this.logger.warn(
+          `PR #${pr.number} merged by non-assignee - no contribution event emitted`,
+        );
       }
       return;
     }
@@ -335,6 +340,13 @@ export class PrLifecycleHandler {
       return;
     }
 
+    if (existingPr.task.assigneeId !== existingPr.authorId) {
+      this.logger.warn(
+        `PR #${prPayload.number} merged by non-assignee - no contribution event emitted`,
+      );
+      return;
+    }
+
     // Check if task already has a merged PR (multiple PRs per task support)
     const existingMergedPr = await this.prisma.pullRequest.findFirst({
       where: {
@@ -351,57 +363,54 @@ export class PrLifecycleHandler {
       return;
     }
 
-    // First merged PR for this task → emit contribution events
-    await this.emitMergeContributionEvents(
+    const mergedAt = prPayload.merged_at
+      ? new Date(prPayload.merged_at)
+      : new Date();
+
+    // First merged PR for this task → emit the single scoring event
+    await this.emitTaskCompletionEvent(
       project,
       existingPr.task,
       existingPr.authorId,
+      mergedAt,
     );
   }
 
   /**
-   * Emit PR_MERGED and TASK_COMPLETED contribution events
+   * Emit a single TASK_COMPLETED contribution event.
+   *
+   * The merged PR is evidence for completion; the task is the scoring unit.
    */
-  private async emitMergeContributionEvents(
+  private async emitTaskCompletionEvent(
     project: Project,
     task: Task,
     authorId: string,
+    completedAt: Date,
   ): Promise<void> {
-    // Mark task as DONE (only if not already done)
-    if (task.status !== 'DONE') {
+    // A kanban move to Done does not set completedAt. The merge timestamp does.
+    if (task.status !== 'DONE' || !task.completedAt) {
       await this.prisma.task.update({
         where: { id: task.id },
         data: {
           status: 'DONE',
-          completedAt: new Date(),
+          completedAt,
         },
       });
     }
 
-    // Emit PR_MERGED contribution event (base score: 10)
-    await this.prisma.contributionEvent.create({
-      data: {
-        projectId: project.id,
-        userId: authorId,
-        type: 'PR_MERGED',
-        referenceId: task.id,
-        score: 10,
-      },
-    });
-
-    // Emit TASK_COMPLETED contribution event (base score: 5)
+    // Emit TASK_COMPLETED contribution event (base score: 10)
     await this.prisma.contributionEvent.create({
       data: {
         projectId: project.id,
         userId: authorId,
         type: 'TASK_COMPLETED',
         referenceId: task.id,
-        score: 5,
+        score: 10,
       },
     });
 
     this.logger.log(
-      `Contribution events emitted for task ${task.externalTaskId}: PR_MERGED(+10), TASK_COMPLETED(+5)`,
+      `Contribution event emitted for task ${task.externalTaskId}: TASK_COMPLETED(+10)`,
     );
 
     this.eventEmitter.emit('contribution.created', { projectId: project.id });
@@ -410,13 +419,13 @@ export class PrLifecycleHandler {
   /**
    * Parse task ID from PR title or body (spec §6.1, §6.2)
    *
-   * Matches format: TASK-<number>
+   * Matches format: TASK-<code>
    * Checks title first, then body.
    *
    * @returns Task ID string (e.g., "TASK-42") or null
    */
   parseTaskId(title: string, body: string | null): string | null {
-    const regex = /TASK-(\d+)/i;
+    const regex = /\bTASK-([A-Za-z0-9_-]+)\b/i;
     const titleMatch = title.match(regex);
     if (titleMatch) return `TASK-${titleMatch[1]}`;
     const bodyMatch = body?.match(regex);
@@ -446,6 +455,7 @@ export class PrLifecycleHandler {
       user = await this.prisma.user.create({
         data: {
           githubUserId,
+          githubUsername: login,
           name: login,
           avatarUrl: avatarUrl ?? null,
         },

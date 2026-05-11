@@ -38,8 +38,10 @@ export interface ScoreData {
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weights: {
-    PR_MERGED: 10,
-    TASK_COMPLETED: 5,
+    // PR_MERGED is retained for backward compatibility with old events.
+    // A merged PR is evidence; the task completion is the scoring unit.
+    PR_MERGED: 0,
+    TASK_COMPLETED: 10,
     PR_REVIEW_APPROVED: 3,
   },
   multipliers: {
@@ -66,7 +68,7 @@ export class ScoringService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: {
-        contributionEvents: true,
+        contributionEvents: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
       },
     });
 
@@ -76,12 +78,12 @@ export class ScoringService {
       return;
     }
 
-    const config =
-      (project.scoringConfig as unknown as ScoringConfig) ||
-      DEFAULT_SCORING_CONFIG;
+    const config = this.resolveScoringConfig(project.scoringConfig);
 
     // Fetch all related tasks to evaluate difficulty/timeliness
-    const taskIds = project.contributionEvents.map((e) => e.referenceId);
+    const taskIds = project.contributionEvents
+      .filter((e) => e.type === 'TASK_COMPLETED')
+      .map((e) => e.referenceId);
     const tasks = await this.prisma.task.findMany({
       where: { id: { in: taskIds } },
     });
@@ -125,6 +127,7 @@ export class ScoringService {
 
     // Review caps tracker: PR -> Array of review scores
     const prReviewScores = new Map<string, number>();
+    const scoredTaskIds = new Set<string>();
 
     // 1. Process standard events
     for (const event of project.contributionEvents) {
@@ -138,8 +141,16 @@ export class ScoringService {
       let finalScore = 0;
       const userScore = getUserScore(event.userId);
 
-      if (event.type === 'PR_MERGED' || event.type === 'TASK_COMPLETED') {
+      if (event.type === 'PR_MERGED') {
+        continue;
+      }
+
+      if (event.type === 'TASK_COMPLETED') {
+        if (scoredTaskIds.has(event.referenceId)) continue;
+
         const task = taskMap.get(event.referenceId);
+        if (!task) continue;
+
         if (task) {
           const difficultyKey =
             task.difficulty as keyof ScoringConfig['multipliers']['difficulty'];
@@ -155,6 +166,7 @@ export class ScoringService {
         const cap = config.caps.maxScorePerTask;
         if (finalScore > cap) finalScore = cap;
 
+        scoredTaskIds.add(event.referenceId);
         userScore.totalScore += finalScore;
         const key = event.type;
         userScore.breakdown[key].push({
@@ -264,6 +276,32 @@ export class ScoringService {
     if (evalStart && createdAt < evalStart) return false;
     if (evalEnd && createdAt > evalEnd) return false;
     return true;
+  }
+
+  private resolveScoringConfig(rawConfig: unknown): ScoringConfig {
+    const raw = (rawConfig ?? {}) as Partial<ScoringConfig>;
+
+    return {
+      weights: {
+        ...DEFAULT_SCORING_CONFIG.weights,
+        ...(raw.weights ?? {}),
+        PR_MERGED: 0,
+      },
+      multipliers: {
+        difficulty: {
+          ...DEFAULT_SCORING_CONFIG.multipliers.difficulty,
+          ...(raw.multipliers?.difficulty ?? {}),
+        },
+        timeliness: {
+          ...DEFAULT_SCORING_CONFIG.multipliers.timeliness,
+          ...(raw.multipliers?.timeliness ?? {}),
+        },
+      },
+      caps: {
+        ...DEFAULT_SCORING_CONFIG.caps,
+        ...(raw.caps ?? {}),
+      },
+    };
   }
 
   private getTimelinessModifier(
@@ -392,7 +430,10 @@ export class ScoringService {
     actorId: string,
     actorRoles: Role[],
   ) {
-    if (actorRoles.includes('ADMIN') || actorRoles.includes('ORGANIZATION_OWNER')) {
+    if (
+      actorRoles.includes('ADMIN') ||
+      actorRoles.includes('ORGANIZATION_OWNER')
+    ) {
       return;
     }
 

@@ -62,7 +62,20 @@ export class TaskSyncHandler {
         await this.handleCreated(project, projects_v2_item, sender);
         break;
       case 'edited':
-        await this.handleEdited(project, projects_v2_item, sender);
+        await this.handleEdited(
+          project,
+          {
+            ...projects_v2_item,
+            changes:
+              payload.changes ??
+              (
+                projects_v2_item as GitHubProjectV2ItemPayload & {
+                  changes?: GitHubProjectV2ItemEventPayload['changes'];
+                }
+              ).changes,
+          },
+          sender,
+        );
         break;
       case 'deleted':
         await this.handleDeleted(project, projects_v2_item);
@@ -80,8 +93,7 @@ export class TaskSyncHandler {
     item: GitHubProjectV2ItemPayload,
     sender: GitHubUserPayload,
   ): Promise<void> {
-    const contentNodeId = item.content_node_id;
-    if (!contentNodeId) {
+    if (!item.content_node_id && !item.content?.number) {
       this.logger.debug(
         'Project item has no content node — skipping (draft item)',
       );
@@ -109,18 +121,10 @@ export class TaskSyncHandler {
       return;
     }
 
-    // Find or create the sender as the initial assignee
-    // (actual assignee will be synced when the field changes)
-    const actor = sender
-      ? await this.findOrCreateUser(
-          String(sender.id),
-          sender.login,
-          sender.avatar_url,
-        )
-      : null;
+    const assignee = await this.resolveTaskAssignee(item, sender);
 
-    if (!actor) {
-      this.logger.warn('Cannot create task: no sender information available');
+    if (!assignee) {
+      this.logger.warn('Cannot create task: no assignee information available');
       return;
     }
 
@@ -128,8 +132,8 @@ export class TaskSyncHandler {
       data: {
         projectId: project.id,
         externalTaskId,
-        title: `Task ${externalTaskId}`,
-        assigneeId: actor.id,
+        title: item.content?.title ?? `Task ${externalTaskId}`,
+        assigneeId: assignee.id,
         status: 'TODO',
         difficulty: 'MEDIUM',
       },
@@ -182,6 +186,14 @@ export class TaskSyncHandler {
           where: { id: task.id },
           data: { status: newStatus },
         });
+        if (
+          newStatus === 'DONE' &&
+          !task.pullRequests.some((pr) => pr.status === 'MERGED')
+        ) {
+          this.logger.warn(
+            `Task ${externalTaskId} moved to Done without a merged PR - no score awarded`,
+          );
+        }
         this.logger.log(
           `Task ${externalTaskId} status updated: ${task.status} → ${newStatus}`,
         );
@@ -190,13 +202,7 @@ export class TaskSyncHandler {
 
     // Handle assignee field change
     if (changes.field_value?.field_name === 'Assignees') {
-      const actor = sender
-        ? await this.findOrCreateUser(
-            String(sender.id),
-            sender.login,
-            sender.avatar_url,
-          )
-        : null;
+      const actor = await this.resolveTaskAssignee(item, sender);
 
       if (actor && actor.id !== task.assigneeId) {
         const previousAssigneeId = task.assigneeId;
@@ -278,6 +284,10 @@ export class TaskSyncHandler {
    * When the content is an Issue, we'll use TASK-<node_id_hash> format.
    */
   private generateTaskId(item: GitHubProjectV2ItemPayload): string {
+    if (item.content?.number) {
+      return `TASK-${item.content.number}`;
+    }
+
     // Use the content_node_id if available, otherwise use node_id
     const nodeId = item.content_node_id ?? item.node_id;
     // Create a short, deterministic ID from the node
@@ -331,6 +341,7 @@ export class TaskSyncHandler {
       user = await this.prisma.user.create({
         data: {
           githubUserId,
+          githubUsername: login,
           name: login,
           avatarUrl: avatarUrl ?? null,
         },
@@ -338,5 +349,19 @@ export class TaskSyncHandler {
     }
 
     return user;
+  }
+
+  private async resolveTaskAssignee(
+    item: GitHubProjectV2ItemPayload,
+    fallback?: GitHubUserPayload,
+  ) {
+    const assignedUser = item.content?.assignees?.nodes[0] ?? fallback;
+    if (!assignedUser) return null;
+
+    return this.findOrCreateUser(
+      String(assignedUser.id),
+      assignedUser.login,
+      assignedUser.avatar_url,
+    );
   }
 }

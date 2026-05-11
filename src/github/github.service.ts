@@ -210,7 +210,7 @@ export class GitHubService {
                     number
                     state
                     assignees(first: 5) {
-                      nodes { login }
+                      nodes { databaseId id login avatarUrl }
                     }
                   }
                   ... on PullRequest {
@@ -218,7 +218,7 @@ export class GitHubService {
                     number
                     state
                     assignees(first: 5) {
-                      nodes { login }
+                      nodes { databaseId id login avatarUrl }
                     }
                   }
                   ... on DraftIssue {
@@ -230,6 +230,11 @@ export class GitHubService {
                     __typename
                     ... on ProjectV2ItemFieldSingleSelectValue {
                       name
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
+                        }
+                      }
                     }
                     ... on ProjectV2ItemFieldTextValue {
                       text
@@ -282,7 +287,9 @@ export class GitHubService {
       );
       return !!response.repository;
     } catch {
-      this.logger.warn(`GitHub repository validation failed for ${owner}/${repo}`);
+      this.logger.warn(
+        `GitHub repository validation failed for ${owner}/${repo}`,
+      );
       return false;
     }
   }

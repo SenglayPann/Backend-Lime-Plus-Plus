@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ScoringService } from './scoring.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
+import { ProjectAccessService } from '../common/access/project-access.service';
 
 describe('ScoringService', () => {
   let service: ScoringService;
@@ -13,6 +14,12 @@ describe('ScoringService', () => {
     scoreOverride: { findMany: jest.fn(), create: jest.fn() },
     contributionScore: { upsert: jest.fn(), findUnique: jest.fn() },
     auditLog: { create: jest.fn() },
+    projectMember: { findFirst: jest.fn() },
+  };
+
+  const mockProjectAccessService = {
+    assertCanManageProject: jest.fn(),
+    assertCanViewProject: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -20,6 +27,7 @@ describe('ScoringService', () => {
       providers: [
         ScoringService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ProjectAccessService, useValue: mockProjectAccessService },
       ],
     }).compile();
 
@@ -77,7 +85,7 @@ describe('ScoringService', () => {
       expect(mockPrismaService.contributionScore.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           create: expect.objectContaining({
-            totalScore: 15,
+            totalScore: 10,
           }) as unknown,
         }),
       );
@@ -91,13 +99,13 @@ describe('ScoringService', () => {
         contributionEvents: [
           {
             userId: 'u1',
-            type: 'PR_MERGED',
+            type: 'TASK_COMPLETED',
             referenceId: 't1',
             createdAt: new Date(),
           },
           {
             userId: 'u2',
-            type: 'PR_MERGED',
+            type: 'TASK_COMPLETED',
             referenceId: 't2',
             createdAt: new Date(),
           },
@@ -157,12 +165,6 @@ describe('ScoringService', () => {
         contributionEvents: [
           {
             userId: 'u1',
-            type: 'PR_MERGED',
-            referenceId: 't1',
-            createdAt: yesterday,
-          },
-          {
-            userId: 'u1',
             type: 'TASK_COMPLETED',
             referenceId: 't1',
             createdAt: now,
@@ -180,7 +182,7 @@ describe('ScoringService', () => {
 
       expect(mockPrismaService.contributionScore.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({ totalScore: 5 }) as unknown,
+          create: expect.objectContaining({ totalScore: 10 }) as unknown,
         }),
       );
     });
@@ -193,7 +195,7 @@ describe('ScoringService', () => {
         contributionEvents: [
           {
             userId: 'u1',
-            type: 'PR_MERGED',
+            type: 'TASK_COMPLETED',
             referenceId: 't1',
             createdAt: new Date(),
           },
@@ -222,8 +224,16 @@ describe('ScoringService', () => {
       ]);
 
       mockPrismaService.prReview.findMany.mockResolvedValue([
-        { id: 'r1', pullRequestId: 'pr1', pullRequest: { authorId: 'u2' } },
-        { id: 'r2', pullRequestId: 'pr1', pullRequest: { authorId: 'u2' } },
+        {
+          id: 'r1',
+          pullRequestId: 'pr1',
+          pullRequest: { authorId: 'u2', externalPrId: '1' },
+        },
+        {
+          id: 'r2',
+          pullRequestId: 'pr1',
+          pullRequest: { authorId: 'u2', externalPrId: '1' },
+        },
       ]);
       mockPrismaService.scoreOverride.findMany.mockResolvedValue([]);
 
@@ -249,12 +259,13 @@ describe('ScoringService', () => {
       mockPrismaService.task.findMany.mockResolvedValue([]);
       mockPrismaService.prReview.findMany.mockResolvedValue([]);
       mockPrismaService.scoreOverride.findMany.mockResolvedValue([]);
+      mockPrismaService.projectMember.findFirst.mockResolvedValue({ id: 'm1' });
 
       const calcSpy = jest
         .spyOn(service, 'calculateProjectScores')
         .mockResolvedValue();
 
-      await service.applyOverride('p1', 'u1', 50, 'Bonus', 'admin1');
+      await service.applyOverride('p1', 'u1', 50, 'Bonus', 'admin1', ['ADMIN']);
 
       expect(mockPrismaService.scoreOverride.create).toHaveBeenCalledWith(
         expect.objectContaining({

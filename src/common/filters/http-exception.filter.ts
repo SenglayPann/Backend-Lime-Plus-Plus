@@ -20,6 +20,7 @@ const HTTP_STATUS_TO_CODE: Record<number, string> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  502: 'BAD_GATEWAY',
   500: 'INTERNAL_ERROR',
 };
 

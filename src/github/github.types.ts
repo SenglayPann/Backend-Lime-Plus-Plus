@@ -30,7 +30,12 @@ export interface GitHubProjectItem {
     number?: number;
     state?: string;
     assignees?: {
-      nodes: Array<{ login: string }>;
+      nodes: Array<{
+        databaseId?: number | null;
+        id?: string;
+        login: string;
+        avatarUrl?: string;
+      }>;
     };
   };
   fieldValues: {
@@ -38,6 +43,9 @@ export interface GitHubProjectItem {
       __typename: string;
       name?: string;
       text?: string;
+      field?: {
+        name?: string;
+      };
     }>;
   };
 }

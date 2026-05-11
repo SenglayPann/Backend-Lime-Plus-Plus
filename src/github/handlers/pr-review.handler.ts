@@ -97,7 +97,7 @@ export class PrReviewHandler {
     const reviewState = this.mapReviewState(review.state);
 
     // Persist review record
-    await this.prisma.prReview.create({
+    const savedReview = await this.prisma.prReview.create({
       data: {
         pullRequestId: existingPr.id,
         reviewerId: reviewer.id,
@@ -117,7 +117,7 @@ export class PrReviewHandler {
           projectId: project.id,
           userId: reviewer.id,
           type: 'PR_REVIEW_APPROVED',
-          referenceId: existingPr.id,
+          referenceId: savedReview.id,
           score: 3,
         },
       });
@@ -165,6 +165,7 @@ export class PrReviewHandler {
       user = await this.prisma.user.create({
         data: {
           githubUserId,
+          githubUsername: login,
           name: login,
           avatarUrl: avatarUrl ?? null,
         },
