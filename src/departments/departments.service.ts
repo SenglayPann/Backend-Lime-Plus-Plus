@@ -18,7 +18,12 @@ export class DepartmentsService {
   async findAll(organizationId?: string) {
     return this.prisma.department.findMany({
       where: organizationId ? { organizationId } : {},
-      include: { organization: true },
+      include: { 
+        organization: true,
+        _count: {
+          select: { projects: true }
+        }
+      },
     });
   }
 
@@ -26,6 +31,22 @@ export class DepartmentsService {
     return this.prisma.department.findUnique({
       where: { id },
       include: { organization: true, projects: true },
+    });
+  }
+
+  async update(id: string, dto: any) {
+    return this.prisma.department.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        organizationId: dto.organization_id,
+      },
+    });
+  }
+
+  async remove(id: string) {
+    return this.prisma.department.delete({
+      where: { id },
     });
   }
 }

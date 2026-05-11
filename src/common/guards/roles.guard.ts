@@ -8,14 +8,19 @@ import { RequestWithUser } from '../types/request.interface';
  * Higher roles automatically have permissions of lower roles.
  */
 const ROLE_HIERARCHY: Record<Role, Role[]> = {
-  ORGANIZATION_OWNER: [
-    'ORGANIZATION_OWNER',
+  ADMIN: [
     'ADMIN',
+    'ORGANIZATION_OWNER',
     'DEPARTMENT_MANAGER',
     'PROJECT_MANAGER',
     'PROJECT_MEMBER',
   ],
-  ADMIN: ['ADMIN', 'DEPARTMENT_MANAGER', 'PROJECT_MANAGER', 'PROJECT_MEMBER'],
+  ORGANIZATION_OWNER: [
+    'ORGANIZATION_OWNER',
+    'DEPARTMENT_MANAGER',
+    'PROJECT_MANAGER',
+    'PROJECT_MEMBER',
+  ],
   DEPARTMENT_MANAGER: [
     'DEPARTMENT_MANAGER',
     'PROJECT_MANAGER',

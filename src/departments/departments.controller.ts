@@ -1,9 +1,6 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
   Param,
+  Patch,
+  Delete,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -51,5 +48,19 @@ export class DepartmentsController {
   @ApiOperation({ summary: 'Get department details' })
   async findOne(@Param('id') id: string) {
     return this.departmentsService.findOne(id);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Update a department' })
+  async update(@Param('id') id: string, @Body() updateDepartmentDto: any) {
+    return this.departmentsService.update(id, updateDepartmentDto);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Delete a department' })
+  async remove(@Param('id') id: string) {
+    return this.departmentsService.remove(id);
   }
 }

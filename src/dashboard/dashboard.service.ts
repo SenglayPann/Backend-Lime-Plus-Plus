@@ -33,22 +33,23 @@ export class DashboardService {
   }
 
   async getRecentActivity() {
-    const recentPRs = await this.prisma.pullRequest.findMany({
-      where: { status: 'MERGED' },
-      orderBy: { mergedAt: 'desc' },
+    const recentEvents = await this.prisma.contributionEvent.findMany({
+      orderBy: { createdAt: 'desc' },
       take: 5,
       include: {
-        author: true,
+        user: true,
         project: true,
       },
     });
 
-    return recentPRs.map(pr => ({
-      id: pr.id,
-      title: pr.title,
-      projectName: pr.project.name,
-      authorName: pr.author.name || pr.author.githubUsername,
-      mergedAt: pr.mergedAt,
+    return recentEvents.map((event) => ({
+      id: event.id,
+      title: event.type.split('_').map(word => word.charAt(0) + word.slice(1).toLowerCase()).join(' '),
+      projectId: event.project.id,
+      projectName: event.project.name,
+      authorName: event.user.name || event.user.githubUsername,
+      score: event.score,
+      createdAt: event.createdAt,
     }));
   }
 
