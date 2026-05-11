@@ -13,6 +13,16 @@ export class CreateProjectDto {
   @IsNotEmpty()
   department_id: string;
 
+  @ApiProperty({
+    example: 'd6c54a4d-8a13-4a99-9d19-901c40b3a8ff',
+    description:
+      'User who will manage this project. Defaults to the creator when omitted.',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  project_manager_id?: string;
+
   @ApiProperty({ example: 'Distributed Systems Project' })
   @IsString()
   @IsNotEmpty()

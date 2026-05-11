@@ -26,8 +26,8 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'List all users (Admin only)' })
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'List all users (Dept Manager+)' })
   async findAll() {
     return this.usersService.findAll();
   }

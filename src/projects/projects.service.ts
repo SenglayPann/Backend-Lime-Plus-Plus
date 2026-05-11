@@ -37,6 +37,8 @@ export class ProjectsService {
       dto.department_id,
     );
     await this.validateGitHubResources(dto, actorId, githubToken);
+    const projectManagerId = dto.project_manager_id ?? actorId;
+    await this.assertProjectManagerExists(projectManagerId);
 
     return this.prisma.project.create({
       data: {
@@ -50,6 +52,17 @@ export class ProjectsService {
         evalEnd: dto.evaluation_window?.end
           ? new Date(dto.evaluation_window.end)
           : null,
+        members: {
+          create: {
+            userId: projectManagerId,
+            role: 'PROJECT_MANAGER',
+          },
+        },
+      },
+      include: {
+        department: true,
+        members: { include: { user: true } },
+        _count: { select: { members: true, tasks: true, pullRequests: true } },
       },
     });
   }
@@ -95,6 +108,17 @@ export class ProjectsService {
       throw new BadRequestException(
         'GitHub Project V2 was not found or the token cannot access it',
       );
+    }
+  }
+
+  private async assertProjectManagerExists(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Selected project manager does not exist');
     }
   }
 
@@ -147,6 +171,8 @@ export class ProjectsService {
     if (project.status === ProjectStatus.LOCKED) {
       throw new ConflictException('Project is already locked');
     }
+
+    await this.assertProjectCanLock(id);
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.project.update({
@@ -313,5 +339,35 @@ export class ProjectsService {
         userId,
       },
     });
+  }
+
+  private async assertProjectCanLock(projectId: string) {
+    const [projectManager, assignedTaskCount] = await Promise.all([
+      this.prisma.projectMember.findFirst({
+        where: {
+          projectId,
+          role: 'PROJECT_MANAGER',
+        },
+        select: { id: true },
+      }),
+      this.prisma.task.count({
+        where: {
+          projectId,
+          assigneeId: { not: '' },
+        },
+      }),
+    ]);
+
+    if (!projectManager) {
+      throw new ConflictException(
+        'Project must have at least one project manager before it can be locked',
+      );
+    }
+
+    if (assignedTaskCount === 0) {
+      throw new ConflictException(
+        'Project must have at least one assigned task before it can be locked',
+      );
+    }
   }
 }
