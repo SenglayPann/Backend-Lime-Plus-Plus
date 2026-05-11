@@ -16,6 +16,7 @@ import { PullRequestsModule } from './pull-requests/pull-requests.module';
 import { AuditModule } from './common/audit/audit.module';
 import { ReportsModule } from './common/reports/reports.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     AuditModule,
     ReportsModule,
     DashboardModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

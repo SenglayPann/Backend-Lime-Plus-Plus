@@ -79,6 +79,7 @@ model Department {
   id             String       @id @default(uuid())
   organizationId String       @map("organization_id")
   name           String
+  description    String?      @db.Text
   createdAt      DateTime     @default(now()) @map("created_at")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   projects       Project[]

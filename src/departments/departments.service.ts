@@ -11,6 +11,7 @@ export class DepartmentsService {
       data: {
         name: dto.name,
         organizationId: dto.organization_id,
+        description: dto.description,
       },
     });
   }
@@ -40,6 +41,7 @@ export class DepartmentsService {
       data: {
         name: dto.name,
         organizationId: dto.organization_id,
+        description: dto.description,
       },
     });
   }
