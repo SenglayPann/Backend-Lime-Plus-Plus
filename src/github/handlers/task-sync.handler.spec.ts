@@ -24,6 +24,7 @@ describe('TaskSyncHandler', () => {
     project: { findFirst: jest.fn() },
     task: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     user: { findUnique: jest.fn(), create: jest.fn() },
+    projectMember: { upsert: jest.fn() },
     auditLog: { create: jest.fn() },
   };
 

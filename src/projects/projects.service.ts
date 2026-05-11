@@ -125,7 +125,7 @@ export class ProjectsService {
       include: {
         department: true,
         members: { include: { user: true } },
-        _count: { select: { tasks: true, pullRequests: true } },
+        _count: { select: { members: true, tasks: true, pullRequests: true } },
       },
     });
 
@@ -220,6 +220,7 @@ export class ProjectsService {
 
         const assignee = await this.resolveProjectItemAssignee(item);
         if (!assignee) return null;
+        await this.ensureProjectMembership(id, assignee.id);
 
         // Map GitHub status to TaskStatus
         let taskStatus: TaskStatus = TaskStatus.TODO;
@@ -291,6 +292,22 @@ export class ProjectsService {
         githubUsername: assignee.login,
         name: assignee.login,
         avatarUrl: assignee.avatarUrl ?? null,
+      },
+    });
+  }
+
+  private async ensureProjectMembership(projectId: string, userId: string) {
+    await this.prisma.projectMember.upsert({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId,
+        },
+      },
+      update: {},
+      create: {
+        projectId,
+        userId,
       },
     });
   }

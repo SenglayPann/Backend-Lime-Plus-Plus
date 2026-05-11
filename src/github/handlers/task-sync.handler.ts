@@ -128,6 +128,8 @@ export class TaskSyncHandler {
       return;
     }
 
+    await this.ensureProjectMembership(project.id, assignee.id);
+
     await this.prisma.task.create({
       data: {
         projectId: project.id,
@@ -206,6 +208,8 @@ export class TaskSyncHandler {
 
       if (actor && actor.id !== task.assigneeId) {
         const previousAssigneeId = task.assigneeId;
+
+        await this.ensureProjectMembership(project.id, actor.id);
 
         await this.prisma.task.update({
           where: { id: task.id },
@@ -363,5 +367,21 @@ export class TaskSyncHandler {
       assignedUser.login,
       assignedUser.avatar_url,
     );
+  }
+
+  private async ensureProjectMembership(projectId: string, userId: string) {
+    await this.prisma.projectMember.upsert({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId,
+        },
+      },
+      update: {},
+      create: {
+        projectId,
+        userId,
+      },
+    });
   }
 }
