@@ -8,6 +8,8 @@ import {
   GraphQLRepositoryResponse,
   GraphQLSinglePRResponse,
   GraphQLProjectResponse,
+  GraphQLRepositoryValidationResponse,
+  GraphQLProjectValidationResponse,
 } from './github.types';
 
 @Injectable()
@@ -253,6 +255,65 @@ export class GitHubService {
         error,
       );
       throw error;
+    }
+  }
+
+  async repositoryExists(
+    owner: string,
+    repo: string,
+    accessToken: string,
+  ): Promise<boolean> {
+    const client = this.getAuthenticatedClient(accessToken);
+
+    const query = `
+      query($owner: String!, $repo: String!) {
+        repository(owner: $owner, name: $repo) {
+          id
+          nameWithOwner
+          url
+        }
+      }
+    `;
+
+    try {
+      const response = await client<GraphQLRepositoryValidationResponse>(
+        query,
+        { owner, repo },
+      );
+      return !!response.repository;
+    } catch {
+      this.logger.warn(`GitHub repository validation failed for ${owner}/${repo}`);
+      return false;
+    }
+  }
+
+  async projectV2Exists(
+    projectId: string,
+    accessToken: string,
+  ): Promise<boolean> {
+    const client = this.getAuthenticatedClient(accessToken);
+
+    const query = `
+      query($projectId: ID!) {
+        node(id: $projectId) {
+          __typename
+          ... on ProjectV2 {
+            id
+            title
+            url
+          }
+        }
+      }
+    `;
+
+    try {
+      const response = await client<GraphQLProjectValidationResponse>(query, {
+        projectId,
+      });
+      return response.node?.__typename === 'ProjectV2';
+    } catch {
+      this.logger.warn(`GitHub ProjectV2 validation failed for ${projectId}`);
+      return false;
     }
   }
 

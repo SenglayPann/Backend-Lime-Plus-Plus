@@ -1,12 +1,29 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrStatus } from '../generated/prisma';
+import { ProjectAccessService } from '../common/access/project-access.service';
+import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
 export class PullRequestsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private projectAccessService: ProjectAccessService,
+  ) {}
 
-  async findAll(projectId: string, assigneeId?: string, status?: string) {
+  async findAll(
+    actorId: string,
+    actorRoles: Role[],
+    projectId: string,
+    assigneeId?: string,
+    status?: string,
+  ) {
+    await this.projectAccessService.assertCanViewProject(
+      actorId,
+      actorRoles,
+      projectId,
+    );
+
     return this.prisma.pullRequest.findMany({
       where: {
         projectId,
@@ -31,8 +48,13 @@ export class PullRequestsService {
   }
 
   // Manual re-validation could be complex, but for MVP it just returns the current state
-  async validateLink(id: string) {
+  async validateLink(id: string, actorId: string, actorRoles: Role[]) {
     const pr = await this.findOne(id);
+    await this.projectAccessService.assertCanViewProject(
+      actorId,
+      actorRoles,
+      pr.projectId,
+    );
     const task = pr.task;
     return {
       valid: !!pr.taskId && !!task,

@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
   Request,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -32,30 +33,46 @@ export class ProjectsController {
   @Post()
   @Roles(Role.DEPARTMENT_MANAGER)
   @ApiOperation({ summary: 'Create a new project (Dept Manager+)' })
-  async create(@Body() createProjectDto: CreateProjectDto) {
-    return this.projectsService.create(createProjectDto);
+  async create(
+    @Body() createProjectDto: CreateProjectDto,
+    @Request() req: RequestWithUser,
+    @Headers('x-github-token') githubToken?: string,
+  ) {
+    return this.projectsService.create(
+      createProjectDto,
+      req.user.id,
+      req.user.roles,
+      githubToken,
+    );
   }
 
   @Get()
   @Roles(Role.DEPARTMENT_MANAGER)
   @ApiOperation({ summary: 'List projects (Dept Manager+)' })
   @ApiQuery({ name: 'department_id', required: false })
-  async findAll(@Query('department_id') departmentId?: string) {
-    return this.projectsService.findAll(departmentId);
+  async findAll(
+    @Query('department_id') departmentId: string | undefined,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.projectsService.findAll(
+      departmentId,
+      req.user.id,
+      req.user.roles,
+    );
   }
 
   @Get(':id')
   @Roles(Role.PROJECT_MEMBER)
   @ApiOperation({ summary: 'Get project details' })
-  async findOne(@Param('id') id: string) {
-    return this.projectsService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req: RequestWithUser) {
+    return this.projectsService.findOne(id, req.user.id, req.user.roles);
   }
 
   @Post(':id/lock')
   @Roles(Role.DEPARTMENT_MANAGER)
   @ApiOperation({ summary: 'Lock project for grading (Dept Manager+)' })
   async lock(@Param('id') id: string, @Request() req: RequestWithUser) {
-    return this.projectsService.lockProject(id, req.user.id);
+    return this.projectsService.lockProject(id, req.user.id, req.user.roles);
   }
 
   @Post(':id/tasks/sync')
@@ -76,6 +93,11 @@ export class ProjectsController {
       process.env.GITHUB_PERSONAL_ACCESS_TOKEN ||
       '';
 
-    return this.projectsService.syncTasks(id, accessToken);
+    return this.projectsService.syncTasks(
+      id,
+      accessToken,
+      req.user.id,
+      req.user.roles,
+    );
   }
 }

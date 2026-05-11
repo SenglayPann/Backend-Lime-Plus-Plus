@@ -92,6 +92,8 @@ model User {
   id                  String              @id @default(uuid())
   githubUserId        String              @unique @map("github_user_id")
   githubUsername      String?             @unique @map("github_username")
+  githubAccessToken   String?             @map("github_access_token")
+  githubTokenUpdatedAt DateTime?          @map("github_token_updated_at")
   email               String?
   name                String?
   avatarUrl           String?             @map("avatar_url")

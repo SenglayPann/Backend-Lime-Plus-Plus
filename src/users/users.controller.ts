@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Delete,
+  Request,
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -32,8 +34,12 @@ export class UsersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get user details with roles' })
-  async findOne(@Param('id') id: string) {
-    const user = await this.usersService.getUserWithRoles(id);
+  async findOne(@Param('id') id: string, @Request() req: RequestWithUser) {
+    const user = await this.usersService.getUserWithRoles(
+      id,
+      req.user.id,
+      req.user.roles,
+    );
     if (!user) throw new NotFoundException('User not found');
     return user;
   }

@@ -32,8 +32,14 @@ export class ScoringController {
   async getContribution(
     @Param('projectId') projectId: string,
     @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
   ) {
-    const scoreInfo = await this.scoringService.getUserScore(projectId, userId);
+    const scoreInfo = await this.scoringService.getUserScore(
+      projectId,
+      userId,
+      req.user.id,
+      req.user.roles,
+    );
     if (!scoreInfo) throw new NotFoundException('Contribution data not found');
     return scoreInfo;
   }
@@ -53,6 +59,7 @@ export class ScoringController {
       dto.adjustment,
       dto.reason,
       req.user.id,
+      req.user.roles,
     );
   }
 }

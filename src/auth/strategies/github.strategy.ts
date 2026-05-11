@@ -14,7 +14,7 @@ export class GitHubStrategy extends PassportStrategy(Strategy, 'github') {
       clientID: configService.get<string>('GITHUB_CLIENT_ID')!,
       clientSecret: configService.get<string>('GITHUB_CLIENT_SECRET')!,
       callbackURL: configService.get<string>('GITHUB_CALLBACK_URL')!,
-      scope: ['user:email'],
+      scope: ['user:email', 'repo', 'read:project'],
     });
   }
 
@@ -31,7 +31,10 @@ export class GitHubStrategy extends PassportStrategy(Strategy, 'github') {
       photos: profile.photos,
     };
 
-    const user = await this.usersService.findOrCreateFromGitHub(githubProfile);
+    const user = await this.usersService.findOrCreateFromGitHub(
+      githubProfile,
+      accessToken,
+    );
     const roles = await this.usersService.getUserRoles(user.id);
 
     return {

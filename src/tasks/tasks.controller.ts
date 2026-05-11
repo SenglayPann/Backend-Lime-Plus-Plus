@@ -20,6 +20,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
@@ -38,14 +39,30 @@ export class TasksController {
     @Query('project_id') projectId?: string,
     @Query('assignee_id') assigneeId?: string,
     @Query('status') status?: string,
+    @Request() req?: RequestWithUser,
   ) {
-    return this.tasksService.findAll(projectId, assigneeId, status);
+    return this.tasksService.findAll(
+      req!.user.id,
+      req!.user.roles,
+      projectId,
+      assigneeId,
+      status,
+    );
   }
 
   @Post(':id/assign')
   @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Assign task to a user (Project Manager+)' })
-  async assignTask(@Param('id') id: string, @Body() dto: AssignTaskDto) {
-    return this.tasksService.assignTask(id, dto.assignee_id);
+  async assignTask(
+    @Param('id') id: string,
+    @Body() dto: AssignTaskDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.tasksService.assignTask(
+      id,
+      dto.assignee_id,
+      req.user.id,
+      req.user.roles,
+    );
   }
 }

@@ -1,22 +1,47 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProjectAccessService } from '../common/access/project-access.service';
+import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
 export class DashboardService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private projectAccessService: ProjectAccessService,
+  ) {}
 
-  async getGlobalStats() {
-    const studentsCount = await this.prisma.userRole.count({
-      where: { role: 'PROJECT_MEMBER' },
+  async getGlobalStats(actorId: string, actorRoles: Role[]) {
+    const projectIds = await this.projectAccessService.getAccessibleProjectIds(
+      actorId,
+      actorRoles,
+    );
+
+    if (projectIds.length === 0) {
+      return {
+        activeStudents: 0,
+        ongoingProjects: 0,
+        pullRequests: 0,
+        avgContribution: 0,
+      };
+    }
+
+    const activeStudents = await this.prisma.projectMember.groupBy({
+      by: ['userId'],
+      where: {
+        projectId: { in: projectIds },
+      },
     });
 
     const ongoingProjectsCount = await this.prisma.project.count({
-      where: { status: 'ACTIVE' },
+      where: { id: { in: projectIds }, status: 'ACTIVE' },
     });
 
-    const prsCount = await this.prisma.pullRequest.count();
+    const prsCount = await this.prisma.pullRequest.count({
+      where: { projectId: { in: projectIds } },
+    });
 
     const scores = await this.prisma.contributionScore.findMany({
+      where: { projectId: { in: projectIds } },
       select: { totalScore: true },
     });
 
@@ -25,15 +50,25 @@ export class DashboardService {
       : 0;
 
     return {
-      activeStudents: studentsCount,
+      activeStudents: activeStudents.length,
       ongoingProjects: ongoingProjectsCount,
       pullRequests: prsCount,
       avgContribution: Number(avgContribution.toFixed(1)),
     };
   }
 
-  async getRecentActivity() {
+  async getRecentActivity(actorId: string, actorRoles: Role[]) {
+    const projectIds = await this.projectAccessService.getAccessibleProjectIds(
+      actorId,
+      actorRoles,
+    );
+
+    if (projectIds.length === 0) {
+      return [];
+    }
+
     const recentEvents = await this.prisma.contributionEvent.findMany({
+      where: { projectId: { in: projectIds } },
       orderBy: { createdAt: 'desc' },
       take: 5,
       include: {
@@ -53,10 +88,25 @@ export class DashboardService {
     }));
   }
 
-  async getTopDepartments() {
+  async getTopDepartments(actorId: string, actorRoles: Role[]) {
+    const projectIds = await this.projectAccessService.getAccessibleProjectIds(
+      actorId,
+      actorRoles,
+    );
+
+    if (projectIds.length === 0) {
+      return [];
+    }
+
     const depts = await this.prisma.department.findMany({
+      where: {
+        projects: {
+          some: { id: { in: projectIds } },
+        },
+      },
       include: {
         projects: {
+          where: { id: { in: projectIds } },
           include: {
             contributionScores: true,
           }

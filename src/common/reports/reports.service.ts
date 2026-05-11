@@ -1,21 +1,40 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { Parser } from 'json2csv';
 import { ProjectStatus } from '../../generated/prisma';
 import { ScoreBreakdown } from '../../scoring/scoring.service';
+import { ProjectAccessService } from '../access/project-access.service';
+import type { Role } from '../decorators/roles.decorator';
 
 @Injectable()
 export class ReportsService {
   constructor(
     private prisma: PrismaService,
     private pdfService: PdfService,
+    private projectAccessService: ProjectAccessService,
   ) {}
 
   async exportIndividualPdf(
     projectId: string,
     userId: string,
+    actorId: string,
+    actorRoles: Role[],
   ): Promise<Buffer> {
+    await this.projectAccessService.assertCanViewProject(
+      actorId,
+      actorRoles,
+      projectId,
+    );
+
+    if (actorId !== userId) {
+      await this.projectAccessService.assertCanManageProject(
+        actorId,
+        actorRoles,
+        projectId,
+      );
+    }
+
     const scoreInfo = await this.prisma.contributionScore.findUnique({
       where: { projectId_userId: { projectId, userId } },
       include: {
@@ -74,7 +93,17 @@ export class ReportsService {
     return this.pdfService.generateIndividualReport(reportData);
   }
 
-  async exportProjectPdf(projectId: string): Promise<Buffer> {
+  async exportProjectPdf(
+    projectId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ): Promise<Buffer> {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      projectId,
+    );
+
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: {
@@ -102,7 +131,17 @@ export class ReportsService {
     return this.pdfService.generateProjectReport(reportData);
   }
 
-  async exportProjectCsv(projectId: string): Promise<string> {
+  async exportProjectCsv(
+    projectId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ): Promise<string> {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      projectId,
+    );
+
     const scores = await this.prisma.contributionScore.findMany({
       where: { projectId },
       include: { user: true },

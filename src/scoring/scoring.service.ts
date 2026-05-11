@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { Project, Task, ContributionEvent } from '../generated/prisma';
+import { ProjectAccessService } from '../common/access/project-access.service';
+import type { Role } from '../common/decorators/roles.decorator';
 
 export interface ScoringConfig {
   weights: {
@@ -55,7 +57,10 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
 export class ScoringService {
   private readonly logger = new Logger(ScoringService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private projectAccessService: ProjectAccessService,
+  ) {}
 
   async calculateProjectScores(projectId: string): Promise<void> {
     const project = await this.prisma.project.findUnique({
@@ -285,7 +290,26 @@ export class ScoringService {
     return 1.0 + conf.onTime;
   }
 
-  async getUserScore(projectId: string, userId: string) {
+  async getUserScore(
+    projectId: string,
+    userId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    await this.projectAccessService.assertCanViewProject(
+      actorId,
+      actorRoles,
+      projectId,
+    );
+
+    if (actorId !== userId) {
+      await this.assertCanViewOtherUserContribution(
+        projectId,
+        actorId,
+        actorRoles,
+      );
+    }
+
     return this.prisma.contributionScore.findUnique({
       where: {
         projectId_userId: { projectId, userId },
@@ -299,7 +323,28 @@ export class ScoringService {
     delta: number,
     reason: string,
     actorId: string,
+    actorRoles: Role[],
   ): Promise<void> {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      projectId,
+    );
+
+    const membership = await this.prisma.projectMember.findFirst({
+      where: {
+        projectId,
+        userId,
+      },
+      select: { id: true },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException(
+        'Score overrides can only be applied to project members',
+      );
+    }
+
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
@@ -340,5 +385,31 @@ export class ScoringService {
       `Received contribution.created event for project ${payload.projectId}`,
     );
     await this.calculateProjectScores(payload.projectId);
+  }
+
+  private async assertCanViewOtherUserContribution(
+    projectId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    if (actorRoles.includes('ADMIN') || actorRoles.includes('ORGANIZATION_OWNER')) {
+      return;
+    }
+
+    if (
+      actorRoles.includes('DEPARTMENT_MANAGER') ||
+      actorRoles.includes('PROJECT_MANAGER')
+    ) {
+      await this.projectAccessService.assertCanManageProject(
+        actorId,
+        actorRoles,
+        projectId,
+      );
+      return;
+    }
+
+    throw new ForbiddenException(
+      'You can only view your own contribution details',
+    );
   }
 }

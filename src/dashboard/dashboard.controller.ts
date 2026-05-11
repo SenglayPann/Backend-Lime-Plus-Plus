@@ -1,7 +1,8 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Request, UseGuards } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Dashboard')
 @ApiBearerAuth()
@@ -11,20 +12,20 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('stats')
-  @ApiOperation({ summary: 'Get global dashboard statistics' })
-  async getStats() {
-    return this.dashboardService.getGlobalStats();
+  @ApiOperation({ summary: 'Get scoped dashboard statistics' })
+  async getStats(@Request() req: RequestWithUser) {
+    return this.dashboardService.getGlobalStats(req.user.id, req.user.roles);
   }
 
   @Get('activity')
-  @ApiOperation({ summary: 'Get recent merged PR activity' })
-  async getActivity() {
-    return this.dashboardService.getRecentActivity();
+  @ApiOperation({ summary: 'Get recent activity within visible scope' })
+  async getActivity(@Request() req: RequestWithUser) {
+    return this.dashboardService.getRecentActivity(req.user.id, req.user.roles);
   }
 
   @Get('departments')
-  @ApiOperation({ summary: 'Get top performing departments' })
-  async getDepartments() {
-    return this.dashboardService.getTopDepartments();
+  @ApiOperation({ summary: 'Get top departments within visible scope' })
+  async getDepartments(@Request() req: RequestWithUser) {
+    return this.dashboardService.getTopDepartments(req.user.id, req.user.roles);
   }
 }

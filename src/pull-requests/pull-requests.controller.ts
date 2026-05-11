@@ -1,4 +1,11 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -10,6 +17,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Pull Requests')
 @ApiBearerAuth()
@@ -29,8 +37,15 @@ export class PullRequestsController {
     @Param('projectId') projectId: string,
     @Query('assignee_id') assigneeId?: string,
     @Query('status') status?: string,
+    @Request() req?: RequestWithUser,
   ) {
-    return this.prService.findAll(projectId, assigneeId, status);
+    return this.prService.findAll(
+      req!.user.id,
+      req!.user.roles,
+      projectId,
+      assigneeId,
+      status,
+    );
   }
 
   @Get('pull-requests/:id/validate')
@@ -38,7 +53,7 @@ export class PullRequestsController {
   @ApiOperation({
     summary: 'Validate a pull request task-linkage (Project Members+)',
   })
-  async validate(@Param('id') id: string) {
-    return this.prService.validateLink(id);
+  async validate(@Param('id') id: string, @Request() req: RequestWithUser) {
+    return this.prService.validateLink(id, req.user.id, req.user.roles);
   }
 }

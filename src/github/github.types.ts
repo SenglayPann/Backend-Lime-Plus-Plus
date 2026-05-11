@@ -63,3 +63,20 @@ export interface GraphQLProjectResponse {
     };
   };
 }
+
+export interface GraphQLRepositoryValidationResponse {
+  repository: {
+    id: string;
+    nameWithOwner: string;
+    url: string;
+  } | null;
+}
+
+export interface GraphQLProjectValidationResponse {
+  node: {
+    __typename: string;
+    id?: string;
+    title?: string;
+    url?: string;
+  } | null;
+}

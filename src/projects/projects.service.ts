@@ -2,20 +2,40 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
+import { UsersService } from '../users/users.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { ProjectStatus, AuditAction, TaskStatus } from '../generated/prisma';
+import { ProjectAccessService } from '../common/access/project-access.service';
+import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
 export class ProjectsService {
   constructor(
     private prisma: PrismaService,
     private githubService: GitHubService,
+    private configService: ConfigService,
+    private usersService: UsersService,
+    private projectAccessService: ProjectAccessService,
   ) {}
 
-  async create(dto: CreateProjectDto) {
+  async create(
+    dto: CreateProjectDto,
+    actorId: string,
+    actorRoles: Role[],
+    githubToken?: string,
+  ) {
+    await this.projectAccessService.assertCanCreateProjectInDepartment(
+      actorId,
+      actorRoles,
+      dto.department_id,
+    );
+    await this.validateGitHubResources(dto, actorId, githubToken);
+
     return this.prisma.project.create({
       data: {
         name: dto.name,
@@ -32,14 +52,68 @@ export class ProjectsService {
     });
   }
 
-  async findAll(departmentId?: string) {
+  private async validateGitHubResources(
+    dto: CreateProjectDto,
+    actorId: string,
+    githubToken?: string,
+  ) {
+    const accessToken =
+      githubToken ||
+      (await this.usersService.getGitHubAccessToken(actorId)) ||
+      this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
+
+    if (!accessToken) {
+      throw new BadRequestException(
+        'Your GitHub login does not include a usable token for repository and Project V2 validation. Sign out and sign in again with the requested GitHub permissions, or configure GITHUB_PERSONAL_ACCESS_TOKEN on the backend.',
+      );
+    }
+
+    const repository = dto.repository.trim();
+    const match = repository.match(/^([^/\s]+)\/([^/\s]+)$/);
+
+    if (!match) {
+      throw new BadRequestException(
+        'Repository must use the owner/repo format, for example octocat/hello-world',
+      );
+    }
+
+    const [, owner, repo] = match;
+    const [repoExists, projectExists] = await Promise.all([
+      this.githubService.repositoryExists(owner, repo, accessToken),
+      this.githubService.projectV2Exists(dto.github_project_id, accessToken),
+    ]);
+
+    if (!repoExists) {
+      throw new BadRequestException(
+        `GitHub repository ${repository} was not found or the token cannot access it`,
+      );
+    }
+
+    if (!projectExists) {
+      throw new BadRequestException(
+        'GitHub Project V2 was not found or the token cannot access it',
+      );
+    }
+  }
+
+  async findAll(departmentId: string | undefined, actorId: string, actorRoles: Role[]) {
     return this.prisma.project.findMany({
-      where: departmentId ? { departmentId } : {},
+      where: this.projectAccessService.buildAccessibleProjectWhere(
+        actorId,
+        actorRoles,
+        departmentId,
+      ),
       include: { department: true },
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, actorId: string, actorRoles: Role[]) {
+    await this.projectAccessService.assertCanViewProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: {
@@ -53,8 +127,13 @@ export class ProjectsService {
     return project;
   }
 
-  async lockProject(id: string, actorId: string) {
-    const project = await this.findOne(id);
+  async lockProject(id: string, actorId: string, actorRoles: Role[]) {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+    const project = await this.findOne(id, actorId, actorRoles);
 
     if (project.status === ProjectStatus.LOCKED) {
       throw new ConflictException('Project is already locked');
@@ -82,8 +161,18 @@ export class ProjectsService {
     });
   }
 
-  async syncTasks(id: string, accessToken: string) {
-    const project = await this.findOne(id);
+  async syncTasks(
+    id: string,
+    accessToken: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+    const project = await this.findOne(id, actorId, actorRoles);
 
     if (!project.externalProjectId) {
       throw new ConflictException('Project is not linked to a GitHub Project');
