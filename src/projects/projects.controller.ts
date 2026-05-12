@@ -47,8 +47,8 @@ export class ProjectsController {
   }
 
   @Get()
-  @Roles(Role.DEPARTMENT_MANAGER)
-  @ApiOperation({ summary: 'List projects (Dept Manager+)' })
+  @Roles(Role.PROJECT_MEMBER)
+  @ApiOperation({ summary: 'List accessible projects (Project Member+)' })
   @ApiQuery({ name: 'department_id', required: false })
   async findAll(
     @Query('department_id') departmentId: string | undefined,

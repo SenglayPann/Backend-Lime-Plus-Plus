@@ -28,4 +28,10 @@ export class DashboardController {
   async getDepartments(@Request() req: RequestWithUser) {
     return this.dashboardService.getTopDepartments(req.user.id, req.user.roles);
   }
+
+  @Get('my-contributions')
+  @ApiOperation({ summary: 'Get the current user contribution workspace' })
+  async getMyContributions(@Request() req: RequestWithUser) {
+    return this.dashboardService.getMyContributions(req.user.id);
+  }
 }

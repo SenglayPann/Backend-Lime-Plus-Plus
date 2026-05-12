@@ -1,6 +1,11 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '../generated/prisma';
 import type { Role as AccessRole } from '../common/decorators/roles.decorator';
@@ -79,10 +84,23 @@ export class UsersService {
   }
 
   async getUserRoles(userId: string): Promise<Role[]> {
-    const userRoles = await this.prisma.userRole.findMany({
-      where: { userId },
-    });
-    return userRoles.map((ur) => ur.role);
+    const [userRoles, projectRoles] = await Promise.all([
+      this.prisma.userRole.findMany({
+        where: { userId },
+        select: { role: true },
+      }),
+      this.prisma.projectMember.findMany({
+        where: { userId },
+        select: { role: true },
+      }),
+    ]);
+
+    return Array.from(
+      new Set([
+        ...userRoles.map((userRole) => userRole.role),
+        ...projectRoles.map((projectRole) => projectRole.role),
+      ]),
+    );
   }
 
   async getUserWithRoles(
@@ -236,7 +254,9 @@ export class UsersService {
       }
     }
 
-    throw new ForbiddenException('You do not have permission to view this user');
+    throw new ForbiddenException(
+      'You do not have permission to view this user',
+    );
   }
 
   private encryptToken(token: string): string {

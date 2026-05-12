@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DashboardService } from './dashboard.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProjectAccessService } from '../common/access/project-access.service';
 
 describe('DashboardService', () => {
   let service: DashboardService;
@@ -9,11 +10,17 @@ describe('DashboardService', () => {
     userRole: {
       count: jest.fn(),
     },
+    projectMember: {
+      groupBy: jest.fn(),
+    },
     project: {
       count: jest.fn(),
     },
     pullRequest: {
       count: jest.fn(),
+      findMany: jest.fn(),
+    },
+    contributionEvent: {
       findMany: jest.fn(),
     },
     contributionScore: {
@@ -24,11 +31,16 @@ describe('DashboardService', () => {
     },
   };
 
+  const mockProjectAccessService = {
+    getAccessibleProjectIds: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DashboardService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ProjectAccessService, useValue: mockProjectAccessService },
       ],
     }).compile();
 
@@ -38,7 +50,13 @@ describe('DashboardService', () => {
 
   describe('getGlobalStats', () => {
     it('should return global stats', async () => {
-      mockPrismaService.userRole.count.mockResolvedValue(100);
+      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([
+        'p1',
+        'p2',
+      ]);
+      mockPrismaService.projectMember.groupBy.mockResolvedValue(
+        Array.from({ length: 100 }, (_, index) => ({ userId: `u${index}` })),
+      );
       mockPrismaService.project.count.mockResolvedValue(10);
       mockPrismaService.pullRequest.count.mockResolvedValue(50);
       mockPrismaService.contributionScore.findMany.mockResolvedValue([
@@ -46,7 +64,7 @@ describe('DashboardService', () => {
         { totalScore: 90 },
       ]);
 
-      const result = await service.getGlobalStats();
+      const result = await service.getGlobalStats('admin', ['ADMIN']);
 
       expect(result).toEqual({
         activeStudents: 100,
@@ -57,12 +75,9 @@ describe('DashboardService', () => {
     });
 
     it('should handle zero scores for avgContribution', async () => {
-      mockPrismaService.userRole.count.mockResolvedValue(0);
-      mockPrismaService.project.count.mockResolvedValue(0);
-      mockPrismaService.pullRequest.count.mockResolvedValue(0);
-      mockPrismaService.contributionScore.findMany.mockResolvedValue([]);
+      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([]);
 
-      const result = await service.getGlobalStats();
+      const result = await service.getGlobalStats('admin', ['ADMIN']);
 
       expect(result).toEqual({
         activeStudents: 0,
@@ -75,25 +90,31 @@ describe('DashboardService', () => {
 
   describe('getRecentActivity', () => {
     it('should return recent PRs mapped', async () => {
-      mockPrismaService.pullRequest.findMany.mockResolvedValue([
+      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([
+        'p1',
+      ]);
+      mockPrismaService.contributionEvent.findMany.mockResolvedValue([
         {
-          id: 'pr-1',
-          title: 'Test PR',
-          mergedAt: new Date('2026-01-01T00:00:00.000Z'),
-          author: { name: 'Senglay', githubUsername: 'senglay' },
-          project: { name: 'Test Project' },
+          id: 'event-1',
+          type: 'TASK_COMPLETED',
+          score: 10,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          user: { name: 'Senglay', githubUsername: 'senglay' },
+          project: { id: 'p1', name: 'Test Project' },
         },
       ]);
 
-      const result = await service.getRecentActivity();
+      const result = await service.getRecentActivity('admin', ['ADMIN']);
 
       expect(result).toEqual([
         {
-          id: 'pr-1',
-          title: 'Test PR',
+          id: 'event-1',
+          title: 'Task Completed',
+          projectId: 'p1',
           projectName: 'Test Project',
           authorName: 'Senglay',
-          mergedAt: new Date('2026-01-01T00:00:00.000Z'),
+          score: 10,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
         },
       ]);
     });
@@ -101,6 +122,9 @@ describe('DashboardService', () => {
 
   describe('getTopDepartments', () => {
     it('should calculate and return top departments', async () => {
+      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([
+        'p1',
+      ]);
       mockPrismaService.department.findMany.mockResolvedValue([
         {
           id: 'dept-1',
@@ -112,13 +136,11 @@ describe('DashboardService', () => {
         {
           id: 'dept-2',
           name: 'IT',
-          projects: [
-            { contributionScores: [{ totalScore: 80 }] },
-          ],
+          projects: [{ contributionScores: [{ totalScore: 80 }] }],
         },
       ]);
 
-      const result = await service.getTopDepartments();
+      const result = await service.getTopDepartments('admin', ['ADMIN']);
 
       expect(result).toEqual([
         { id: 'dept-1', name: 'Computer Science', avgScore: 95 },
