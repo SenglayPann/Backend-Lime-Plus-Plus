@@ -7,7 +7,7 @@ import {
   Request,
   UseGuards,
   StreamableFile,
-  Header,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
@@ -42,16 +42,14 @@ export class ReportsController {
     @Body() dto: ReportDto,
     @Request() req: RequestWithUser,
   ) {
+    const userId = dto.user_id || req.user.id;
     const buffer = await this.reportsService.exportIndividualPdf(
       dto.project_id,
-      dto.user_id!,
+      userId,
       req.user.id,
       req.user.roles,
     );
-    return new StreamableFile(buffer, {
-      type: 'application/pdf',
-      disposition: `attachment; filename="report_${dto.user_id}.pdf"`,
-    });
+    return this.pdfFile(buffer, `lime_individual_report_${userId}.pdf`);
   }
 
   @Post('project')
@@ -61,29 +59,29 @@ export class ReportsController {
     @Body() dto: ReportDto,
     @Request() req: RequestWithUser,
   ) {
+    if (dto.format !== 'pdf' && dto.format !== 'csv') {
+      throw new BadRequestException('Report format must be pdf or csv');
+    }
+
     if (dto.format === 'csv') {
       const csv = await this.reportsService.exportProjectCsv(
         dto.project_id,
         req.user.id,
         req.user.roles,
       );
-      return csv; // NestJS will return as text/plain or we can use StreamableFile
+      return this.csvFile(csv, `lime_project_scores_${dto.project_id}.csv`);
     }
+
     const buffer = await this.reportsService.exportProjectPdf(
       dto.project_id,
       req.user.id,
       req.user.roles,
     );
-    return new StreamableFile(buffer, {
-      type: 'application/pdf',
-      disposition: 'attachment; filename="project_report.pdf"',
-    });
+    return this.pdfFile(buffer, `lime_project_report_${dto.project_id}.pdf`);
   }
 
   @Get('projects/:projectId/users/:userId/pdf')
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER, Role.PROJECT_MEMBER)
-  @Header('Content-Type', 'application/pdf')
-  @Header('Content-Disposition', 'attachment; filename="individual_report.pdf"')
   @ApiOperation({
     summary: 'Export individual performance report as PDF (Legacy GET)',
   })
@@ -98,13 +96,14 @@ export class ReportsController {
       req.user.id,
       req.user.roles,
     );
-    return new StreamableFile(buffer);
+    return this.pdfFile(
+      buffer,
+      `lime_individual_report_${projectId}_${userId}.pdf`,
+    );
   }
 
   @Get('projects/:projectId/pdf')
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
-  @Header('Content-Type', 'application/pdf')
-  @Header('Content-Disposition', 'attachment; filename="project_report.pdf"')
   @ApiOperation({
     summary: 'Export project-wide performance report as PDF (Legacy GET)',
   })
@@ -117,13 +116,11 @@ export class ReportsController {
       req.user.id,
       req.user.roles,
     );
-    return new StreamableFile(buffer);
+    return this.pdfFile(buffer, `lime_project_report_${projectId}.pdf`);
   }
 
   @Get('projects/:projectId/csv')
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
-  @Header('Content-Type', 'text/csv')
-  @Header('Content-Disposition', 'attachment; filename="project_scores.csv"')
   @ApiOperation({
     summary: 'Export project-wide performance scores as CSV (Legacy GET)',
   })
@@ -131,10 +128,29 @@ export class ReportsController {
     @Param('projectId') projectId: string,
     @Request() req: RequestWithUser,
   ) {
-    return this.reportsService.exportProjectCsv(
+    const csv = await this.reportsService.exportProjectCsv(
       projectId,
       req.user.id,
       req.user.roles,
     );
+    return this.csvFile(csv, `lime_project_scores_${projectId}.csv`);
+  }
+
+  private pdfFile(buffer: Buffer, filename: string) {
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${this.safeFilename(filename)}"`,
+    });
+  }
+
+  private csvFile(csv: string, filename: string) {
+    return new StreamableFile(Buffer.from(csv, 'utf8'), {
+      type: 'text/csv; charset=utf-8',
+      disposition: `attachment; filename="${this.safeFilename(filename)}"`,
+    });
+  }
+
+  private safeFilename(filename: string) {
+    return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
   }
 }

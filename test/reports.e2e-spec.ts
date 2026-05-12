@@ -6,17 +6,20 @@ import { ReportsService } from './../src/common/reports/reports.service';
 import { JwtAuthGuard } from './../src/common/guards/jwt-auth.guard';
 import { RolesGuard } from './../src/common/guards/roles.guard';
 import { PrismaService } from './../src/prisma/prisma.service';
+import { TransformInterceptor } from './../src/common/interceptors';
 
 describe('ReportsController (e2e)', () => {
   let app: INestApplication;
   const mockReportsService = {
     exportIndividualPdf: jest
       .fn()
-      .mockResolvedValue(Buffer.from('pdf-content')),
-    exportProjectPdf: jest
+      .mockResolvedValue(Buffer.from('%PDF-individual')),
+    exportProjectPdf: jest.fn().mockResolvedValue(Buffer.from('%PDF-project')),
+    exportProjectCsv: jest
       .fn()
-      .mockResolvedValue(Buffer.from('project-pdf-content')),
-    exportProjectCsv: jest.fn().mockResolvedValue('name,score\nUser 1,100'),
+      .mockResolvedValue(
+        '\uFEFF"rank","student_name","total_score"\n1,"User 1",100',
+      ),
   };
 
   beforeEach(async () => {
@@ -28,12 +31,22 @@ describe('ReportsController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue({}) // Empty mock as ReportsService is already mocked
       .overrideGuard(JwtAuthGuard)
-      .useValue({ canActivate: () => true })
+      .useValue({
+        canActivate: (context) => {
+          const request = context.switchToHttp().getRequest();
+          request.user = {
+            id: 'teacher',
+            roles: ['DEPARTMENT_MANAGER'],
+          };
+          return true;
+        },
+      })
       .overrideGuard(RolesGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalInterceptors(new TransformInterceptor());
     await app.init();
   });
 
@@ -43,7 +56,10 @@ describe('ReportsController (e2e)', () => {
       .send({ project_id: 'p1', user_id: 'u1', format: 'pdf' })
       .expect(201)
       .expect('Content-Type', /application\/pdf/)
-      .expect('Content-Disposition', /attachment/);
+      .expect('Content-Disposition', /lime_individual_report_u1\.pdf/)
+      .expect((res) => {
+        expect(res.body.subarray(0, 4).toString()).toBe('%PDF');
+      });
   });
 
   it('/reports/project (POST) - generates PDF', () => {
@@ -51,7 +67,11 @@ describe('ReportsController (e2e)', () => {
       .post('/reports/project')
       .send({ project_id: 'p1', format: 'pdf' })
       .expect(201)
-      .expect('Content-Type', /application\/pdf/);
+      .expect('Content-Type', /application\/pdf/)
+      .expect('Content-Disposition', /lime_project_report_p1\.pdf/)
+      .expect((res) => {
+        expect(res.body.subarray(0, 4).toString()).toBe('%PDF');
+      });
   });
 
   it('/reports/project (POST) - generates CSV', () => {
@@ -59,8 +79,10 @@ describe('ReportsController (e2e)', () => {
       .post('/reports/project')
       .send({ project_id: 'p1', format: 'csv' })
       .expect(201)
+      .expect('Content-Type', /text\/csv/)
+      .expect('Content-Disposition', /lime_project_scores_p1\.csv/)
       .expect((res) => {
-        expect(res.text).toContain('name,score');
+        expect(res.text).toContain('"rank","student_name","total_score"');
       });
   });
 

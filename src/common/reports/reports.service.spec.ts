@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
-import { NotFoundException } from '@nestjs/common';
+import { ProjectAccessService } from '../access/project-access.service';
 
 describe('ReportsService', () => {
   let service: ReportsService;
@@ -11,11 +12,19 @@ describe('ReportsService', () => {
     contributionScore: { findUnique: jest.fn(), findMany: jest.fn() },
     project: { findUnique: jest.fn() },
     pullRequest: { findMany: jest.fn() },
+    prReview: { findMany: jest.fn() },
+    task: { findMany: jest.fn() },
+    scoreOverride: { findMany: jest.fn() },
   };
 
   const mockPdfService = {
     generateIndividualReport: jest.fn(),
     generateProjectReport: jest.fn(),
+  };
+
+  const mockProjectAccessService = {
+    assertCanViewProject: jest.fn(),
+    assertCanManageProject: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -24,6 +33,7 @@ describe('ReportsService', () => {
         ReportsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: PdfService, useValue: mockPdfService },
+        { provide: ProjectAccessService, useValue: mockProjectAccessService },
       ],
     }).compile();
 
@@ -32,76 +42,147 @@ describe('ReportsService', () => {
   });
 
   describe('exportIndividualPdf', () => {
-    it('should throw NotFoundException if score data missing', async () => {
+    it('throws NotFoundException if score data is missing', async () => {
       mockPrismaService.contributionScore.findUnique.mockResolvedValue(null);
-      await expect(service.exportIndividualPdf('p1', 'u1')).rejects.toThrow(
-        NotFoundException,
-      );
+
+      await expect(
+        service.exportIndividualPdf('p1', 'u1', 'u1', ['PROJECT_MEMBER']),
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it('should fetch authentic data and call PdfService', async () => {
-      const mockScore = {
+    it('builds an evidence-rich individual report', async () => {
+      mockPrismaService.contributionScore.findUnique.mockResolvedValue({
         totalScore: 100,
-        breakdown: { PR_MERGED: [{ task: 'T1', score: 40 }] },
+        updatedAt: new Date('2026-05-01T10:00:00.000Z'),
+        breakdown: {
+          TASK_COMPLETED: [{ task: 'TASK-1', score: 10 }],
+          REVIEWS: [{ pr: '123', score: 3 }],
+          OVERRIDES: [{ reason: 'Adjustment', score: 2 }],
+        },
         user: {
           name: 'Test User',
           githubUsername: 'testuser',
           email: 'test@test.com',
         },
         project: {
+          name: 'Distributed Systems',
           repository: 'org/repo',
+          externalProjectId: 'PVT_1',
+          status: 'ACTIVE',
+          evalStart: null,
+          evalEnd: null,
+          lockedAt: null,
+          members: [{ role: 'PROJECT_MANAGER' }],
           department: { name: 'CS', organization: { name: 'Uni' } },
         },
-      };
-
-      mockPrismaService.contributionScore.findUnique.mockResolvedValue(
-        mockScore,
-      );
+      });
       mockPrismaService.pullRequest.findMany.mockResolvedValue([
         {
           externalPrId: '123',
+          taskId: 'task-db-1',
+          title: 'Implement feature',
           status: 'MERGED',
-          task: { externalTaskId: 'T1', title: 'Task 1' },
+          mergedAt: new Date('2026-05-02T10:00:00.000Z'),
+          url: 'https://github.com/org/repo/pull/123',
+          task: { externalTaskId: 'TASK-1', title: 'Task 1' },
+        },
+      ]);
+      mockPrismaService.prReview.findMany.mockResolvedValue([
+        {
+          state: 'APPROVED',
+          createdAt: new Date('2026-05-02T11:00:00.000Z'),
+          pullRequest: { externalPrId: '124' },
+        },
+      ]);
+      mockPrismaService.task.findMany.mockResolvedValue([]);
+      mockPrismaService.scoreOverride.findMany.mockResolvedValue([
+        {
+          delta: 2,
+          reason: 'Adjustment',
+          createdAt: new Date('2026-05-03T10:00:00.000Z'),
+          overrider: { name: 'Teacher', githubUsername: 'teacher' },
         },
       ]);
       mockPdfService.generateIndividualReport.mockResolvedValue(
-        Buffer.from('pdf-content'),
+        Buffer.from('%PDF-test'),
       );
 
-      const result = await service.exportIndividualPdf('p1', 'u1');
+      const result = await service.exportIndividualPdf('p1', 'u1', 'u1', [
+        'PROJECT_MEMBER',
+      ]);
 
-      expect(result).toBeInstanceOf(Buffer);
+      expect(result.toString()).toContain('%PDF');
       expect(mockPdfService.generateIndividualReport).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: 'Test User',
-          totalScore: 100,
-          pullRequests: expect.arrayContaining([
-            expect.objectContaining({ title: 'Task 1', score: 40 }) as unknown,
-          ]) as unknown,
-        }) as unknown,
+          student: expect.objectContaining({
+            name: 'Test User',
+            projectRole: 'PROJECT_MANAGER',
+          }),
+          score: expect.objectContaining({
+            totalScore: 100,
+            taskCompletionPoints: 10,
+            reviewPoints: 3,
+            overrideDelta: 2,
+          }),
+          contributionEvidence: [
+            expect.objectContaining({
+              taskId: 'TASK-1',
+              prNumber: '123',
+              score: 10,
+            }),
+          ],
+        }),
       );
     });
   });
 
   describe('exportProjectCsv', () => {
-    it('should generate valid CSV string', async () => {
-      mockPrismaService.contributionScore.findMany.mockResolvedValue([
-        {
-          totalScore: 100,
-          updatedAt: new Date(),
-          user: { name: 'User 1', githubUsername: 'u1' },
-        },
-        {
-          totalScore: 80,
-          updatedAt: new Date(),
-          user: { name: 'User 2', githubUsername: 'u2' },
-        },
+    it('generates an Excel-openable CSV with essential columns', async () => {
+      mockPrismaService.project.findUnique.mockResolvedValue({
+        members: [
+          {
+            userId: 'u1',
+            role: 'PROJECT_MEMBER',
+            user: {
+              name: 'User 1',
+              githubUsername: 'u1',
+              email: 'u1@example.com',
+            },
+          },
+        ],
+        tasks: [{ assigneeId: 'u1', status: 'DONE' }],
+        pullRequests: [
+          {
+            authorId: 'u1',
+            status: 'MERGED',
+            reviews: [{ reviewerId: 'u1', state: 'APPROVED' }],
+          },
+        ],
+        contributionScores: [
+          {
+            userId: 'u1',
+            totalScore: 100,
+            updatedAt: new Date('2026-05-04T10:00:00.000Z'),
+            breakdown: {},
+            user: {
+              id: 'u1',
+              name: 'User 1',
+              githubUsername: 'u1',
+              email: 'u1@example.com',
+            },
+          },
+        ],
+        scoreOverrides: [{ userId: 'u1', delta: 5 }],
+      });
+
+      const csv = await service.exportProjectCsv('p1', 'teacher', [
+        'DEPARTMENT_MANAGER',
       ]);
 
-      const csv = await service.exportProjectCsv('p1');
-      expect(csv).toContain('"githubUsername","name","totalScore"');
-      expect(csv).toContain('"u1","User 1",100');
-      expect(csv).toContain('"u2","User 2",80');
+      expect(csv.charCodeAt(0)).toBe(0xfeff);
+      expect(csv).toContain('"rank","student_name","github_username"');
+      expect(csv).toContain('"User 1","u1","u1@example.com"');
+      expect(csv).toContain('100,1,1,1,5');
     });
   });
 });
