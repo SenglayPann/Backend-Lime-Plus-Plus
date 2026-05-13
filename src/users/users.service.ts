@@ -260,6 +260,8 @@ export class UsersService {
         },
         projectMembers: {
           select: {
+            id: true,
+            role: true,
             project: {
               select: {
                 id: true,
