@@ -18,8 +18,23 @@ export class ProjectAccessService {
   ): Prisma.ProjectWhereInput {
     const clauses: Prisma.ProjectWhereInput[] = [];
 
-    if (this.hasAnyRole(roles, ['ADMIN', 'ORGANIZATION_OWNER'])) {
+    if (roles.includes('ADMIN')) {
       clauses.push({});
+    }
+
+    if (roles.includes('ORGANIZATION_MANAGER')) {
+      clauses.push({
+        department: {
+          organization: {
+            userRoles: {
+              some: {
+                userId,
+                role: PrismaRole.ORGANIZATION_MANAGER,
+              },
+            },
+          },
+        },
+      });
     }
 
     if (roles.includes('DEPARTMENT_MANAGER')) {
@@ -76,13 +91,53 @@ export class ProjectAccessService {
     return projects.map((project) => project.id);
   }
 
+  async getManageableProjectIds(
+    userId: string,
+    roles: Role[],
+    departmentId?: string,
+  ): Promise<string[]> {
+    const where = this.buildManageableProjectWhere(userId, roles, departmentId);
+
+    if (!where) {
+      return [];
+    }
+
+    const projects = await this.prisma.project.findMany({
+      where,
+      select: { id: true },
+    });
+
+    return projects.map((project) => project.id);
+  }
+
   async assertCanCreateProjectInDepartment(
     userId: string,
     roles: Role[],
     departmentId: string,
   ) {
-    if (this.hasAnyRole(roles, ['ADMIN', 'ORGANIZATION_OWNER'])) {
+    if (roles.includes('ADMIN')) {
       return;
+    }
+
+    if (roles.includes('ORGANIZATION_MANAGER')) {
+      const hasOrganizationRole = await this.prisma.department.findFirst({
+        where: {
+          id: departmentId,
+          organization: {
+            userRoles: {
+              some: {
+                userId,
+                role: PrismaRole.ORGANIZATION_MANAGER,
+              },
+            },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (hasOrganizationRole) {
+        return;
+      }
     }
 
     if (!roles.includes('DEPARTMENT_MANAGER')) {
@@ -101,9 +156,7 @@ export class ProjectAccessService {
     });
 
     if (!hasDepartmentRole) {
-      throw new ForbiddenException(
-        'You do not manage the selected department',
-      );
+      throw new ForbiddenException('You do not manage the selected department');
     }
   }
 
@@ -126,10 +179,75 @@ export class ProjectAccessService {
     roles: Role[],
     projectId: string,
   ) {
+    const where = this.buildManageableProjectWhere(userId, roles);
+
+    if (!where) {
+      throw new ForbiddenException(
+        'You do not have permission to manage this project',
+      );
+    }
+
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...where,
+      },
+      select: { id: true },
+    });
+
+    if (!project) {
+      throw new ForbiddenException(
+        'You do not have permission to manage this project',
+      );
+    }
+  }
+
+  async canManageProject(
+    userId: string,
+    roles: Role[],
+    projectId: string,
+  ): Promise<boolean> {
+    const where = this.buildManageableProjectWhere(userId, roles);
+
+    if (!where) {
+      return false;
+    }
+
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...where,
+      },
+      select: { id: true },
+    });
+
+    return !!project;
+  }
+
+  buildManageableProjectWhere(
+    userId: string,
+    roles: Role[],
+    departmentId?: string,
+  ): Prisma.ProjectWhereInput | null {
     const managementClauses: Prisma.ProjectWhereInput[] = [];
 
-    if (this.hasAnyRole(roles, ['ADMIN', 'ORGANIZATION_OWNER'])) {
+    if (roles.includes('ADMIN')) {
       managementClauses.push({});
+    }
+
+    if (roles.includes('ORGANIZATION_MANAGER')) {
+      managementClauses.push({
+        department: {
+          organization: {
+            userRoles: {
+              some: {
+                userId,
+                role: PrismaRole.ORGANIZATION_MANAGER,
+              },
+            },
+          },
+        },
+      });
     }
 
     if (roles.includes('DEPARTMENT_MANAGER')) {
@@ -156,21 +274,22 @@ export class ProjectAccessService {
       });
     }
 
-    const project = await this.prisma.project.findFirst({
-      where: {
-        id: projectId,
-        ...(managementClauses.length === 1
-          ? managementClauses[0]
-          : { OR: managementClauses }),
-      },
-      select: { id: true },
-    });
-
-    if (!project) {
-      throw new ForbiddenException(
-        'You do not have permission to manage this project',
-      );
+    if (managementClauses.length === 0) {
+      return null;
     }
+
+    const scope: Prisma.ProjectWhereInput =
+      managementClauses.length === 1
+        ? managementClauses[0]
+        : { OR: managementClauses };
+
+    if (!departmentId) {
+      return scope;
+    }
+
+    return {
+      AND: [scope, { departmentId }],
+    };
   }
 
   private hasAnyRole(userRoles: Role[], allowed: Role[]) {

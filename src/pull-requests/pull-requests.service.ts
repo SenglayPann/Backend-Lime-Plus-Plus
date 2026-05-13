@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrStatus } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
@@ -24,10 +28,20 @@ export class PullRequestsService {
       projectId,
     );
 
+    const canManageProject = await this.projectAccessService.canManageProject(
+      actorId,
+      actorRoles,
+      projectId,
+    );
+
+    if (!canManageProject && assigneeId && assigneeId !== actorId) {
+      return [];
+    }
+
     return this.prisma.pullRequest.findMany({
       where: {
         projectId,
-        authorId: assigneeId || undefined,
+        authorId: canManageProject ? assigneeId || undefined : actorId,
         status: (status as PrStatus) || undefined,
       },
       include: {
@@ -55,6 +69,18 @@ export class PullRequestsService {
       actorRoles,
       pr.projectId,
     );
+    const canManageProject = await this.projectAccessService.canManageProject(
+      actorId,
+      actorRoles,
+      pr.projectId,
+    );
+
+    if (!canManageProject && pr.authorId !== actorId) {
+      throw new ForbiddenException(
+        'You do not have permission to validate this pull request',
+      );
+    }
+
     const task = pr.task;
     return {
       valid: !!pr.taskId && !!task,

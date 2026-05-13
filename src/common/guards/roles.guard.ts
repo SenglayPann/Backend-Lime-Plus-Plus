@@ -10,13 +10,13 @@ import { RequestWithUser } from '../types/request.interface';
 const ROLE_HIERARCHY: Record<Role, Role[]> = {
   ADMIN: [
     'ADMIN',
-    'ORGANIZATION_OWNER',
+    'ORGANIZATION_MANAGER',
     'DEPARTMENT_MANAGER',
     'PROJECT_MANAGER',
     'PROJECT_MEMBER',
   ],
-  ORGANIZATION_OWNER: [
-    'ORGANIZATION_OWNER',
+  ORGANIZATION_MANAGER: [
+    'ORGANIZATION_MANAGER',
     'DEPARTMENT_MANAGER',
     'PROJECT_MANAGER',
     'PROJECT_MEMBER',

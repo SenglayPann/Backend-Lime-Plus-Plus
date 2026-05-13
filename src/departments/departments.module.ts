@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { DepartmentsService } from './departments.service';
 import { DepartmentsController } from './departments.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ProjectAccessModule } from '../common/access/project-access.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ProjectAccessModule],
   controllers: [DepartmentsController],
   providers: [DepartmentsService],
   exports: [DepartmentsService],

@@ -26,10 +26,10 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles(Role.DEPARTMENT_MANAGER)
-  @ApiOperation({ summary: 'List all users (Dept Manager+)' })
-  async findAll() {
-    return this.usersService.findAll();
+  @Roles(Role.PROJECT_MEMBER)
+  @ApiOperation({ summary: 'List visible users' })
+  async findAll(@Request() req: RequestWithUser) {
+    return this.usersService.findAll(req.user.id, req.user.roles);
   }
 
   @Get(':id')
@@ -45,24 +45,30 @@ export class UsersController {
   }
 
   @Post(':userId/roles')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Assign a role to a user (Admin only)' })
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({ summary: 'Assign a scoped role to a user' })
   async assignRole(
     @Param('userId') userId: string,
     @Body() dto: AssignRoleDto,
+    @Request() req: RequestWithUser,
   ) {
     return this.usersService.assignRole(
       userId,
       dto.role,
+      req.user.id,
+      req.user.roles,
       dto.organization_id,
       dto.department_id,
     );
   }
 
   @Delete('roles/:roleId')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Remove a role from a user (Admin only)' })
-  async removeRole(@Param('roleId') roleId: string) {
-    return this.usersService.removeRole(roleId);
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({ summary: 'Remove a scoped role from a user' })
+  async removeRole(
+    @Param('roleId') roleId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.usersService.removeRole(roleId, req.user.id, req.user.roles);
   }
 }

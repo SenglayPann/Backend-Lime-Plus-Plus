@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   BadGatewayException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,7 +12,13 @@ import { GitHubService } from '../github/github.service';
 import type { GitHubProjectItem } from '../github/github.types';
 import { UsersService } from '../users/users.service';
 import { CreateProjectDto } from './dto/create-project.dto';
-import { ProjectStatus, AuditAction, TaskStatus } from '../generated/prisma';
+import {
+  ProjectStatus,
+  AuditAction,
+  TaskStatus,
+  Role as PrismaRole,
+  Prisma,
+} from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
 import type { Role } from '../common/decorators/roles.decorator';
 
@@ -56,6 +63,8 @@ export class ProjectsService {
           create: {
             userId: projectManagerId,
             role: 'PROJECT_MANAGER',
+            source: 'PROJECT_CREATION',
+            createdBy: actorId,
           },
         },
       },
@@ -160,12 +169,141 @@ export class ProjectsService {
     return project;
   }
 
+  async listMembers(id: string, actorId: string, actorRoles: Role[]) {
+    await this.projectAccessService.assertCanViewProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+
+    return this.prisma.projectMember.findMany({
+      where: { projectId: id },
+      include: { user: true },
+      orderBy: [{ role: 'desc' }, { user: { name: 'asc' } }],
+    });
+  }
+
+  async upsertMember(
+    id: string,
+    userId: string,
+    role: PrismaRole,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+    this.assertProjectMembershipRole(role);
+    await this.assertProjectMemberUserExists(userId);
+
+    if (role === PrismaRole.PROJECT_MANAGER) {
+      await this.assertCanAssignProjectManager(id, actorId, actorRoles);
+    }
+
+    const existing = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: id, userId } },
+    });
+
+    if (
+      existing?.role === PrismaRole.PROJECT_MANAGER &&
+      role !== existing.role
+    ) {
+      await this.assertCanAssignProjectManager(id, actorId, actorRoles);
+      await this.assertProjectKeepsAnotherManager(id, existing.id);
+    }
+
+    const member = await this.prisma.projectMember.upsert({
+      where: {
+        projectId_userId: {
+          projectId: id,
+          userId,
+        },
+      },
+      update: {
+        role,
+        source: 'MANUAL',
+      },
+      create: {
+        projectId: id,
+        userId,
+        role,
+        source: 'MANUAL',
+        createdBy: actorId,
+      },
+      include: { user: true },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: AuditAction.ROLE_CHANGE,
+        actorId,
+        projectId: id,
+        metadata: {
+          operation: existing ? 'update_project_member' : 'add_project_member',
+          targetUserId: userId,
+          previousRole: existing?.role || null,
+          role,
+        },
+      },
+    });
+
+    return member;
+  }
+
+  async removeMember(
+    id: string,
+    memberId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+
+    const member = await this.prisma.projectMember.findFirst({
+      where: { id: memberId, projectId: id },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Project member not found');
+    }
+
+    if (member.role === PrismaRole.PROJECT_MANAGER) {
+      await this.assertCanAssignProjectManager(id, actorId, actorRoles);
+      await this.assertProjectKeepsAnotherManager(id, member.id);
+    }
+
+    const removed = await this.prisma.projectMember.delete({
+      where: { id: member.id },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: AuditAction.ROLE_CHANGE,
+        actorId,
+        projectId: id,
+        metadata: {
+          operation: 'remove_project_member',
+          targetUserId: member.userId,
+          role: member.role,
+        },
+      },
+    });
+
+    return removed;
+  }
+
   async lockProject(id: string, actorId: string, actorRoles: Role[]) {
     await this.projectAccessService.assertCanManageProject(
       actorId,
       actorRoles,
       id,
     );
+    await this.assertCanPerformProjectGovernanceAction(id, actorId, actorRoles);
     const project = await this.findOne(id, actorId, actorRoles);
 
     if (project.status === ProjectStatus.LOCKED) {
@@ -337,8 +475,116 @@ export class ProjectsService {
       create: {
         projectId,
         userId,
+        source: 'KANBAN_SYNC',
       },
     });
+  }
+
+  private assertProjectMembershipRole(role: PrismaRole) {
+    if (
+      role !== PrismaRole.PROJECT_MANAGER &&
+      role !== PrismaRole.PROJECT_MEMBER
+    ) {
+      throw new BadRequestException(
+        'Project membership role must be PROJECT_MANAGER or PROJECT_MEMBER',
+      );
+    }
+  }
+
+  private async assertProjectMemberUserExists(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Selected user does not exist');
+    }
+  }
+
+  private async assertCanAssignProjectManager(
+    projectId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    if (actorRoles.includes('ADMIN')) return;
+
+    const managementClauses: Prisma.ProjectWhereInput[] = [];
+
+    if (actorRoles.includes('ORGANIZATION_MANAGER')) {
+      managementClauses.push({
+        department: {
+          organization: {
+            userRoles: {
+              some: {
+                userId: actorId,
+                role: PrismaRole.ORGANIZATION_MANAGER,
+              },
+            },
+          },
+        },
+      });
+    }
+
+    if (actorRoles.includes('DEPARTMENT_MANAGER')) {
+      managementClauses.push({
+        department: {
+          userRoles: {
+            some: {
+              userId: actorId,
+              role: PrismaRole.DEPARTMENT_MANAGER,
+            },
+          },
+        },
+      });
+    }
+
+    if (managementClauses.length === 0) {
+      throw new ForbiddenException(
+        'Only department managers or higher can assign project managers',
+      );
+    }
+
+    const project = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        OR: managementClauses,
+      },
+      select: { id: true },
+    });
+
+    if (!project) {
+      throw new ForbiddenException(
+        'You do not have permission to assign a project manager here',
+      );
+    }
+  }
+
+  private async assertCanPerformProjectGovernanceAction(
+    projectId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    await this.assertCanAssignProjectManager(projectId, actorId, actorRoles);
+  }
+
+  private async assertProjectKeepsAnotherManager(
+    projectId: string,
+    excludedMemberId: string,
+  ) {
+    const managerCount = await this.prisma.projectMember.count({
+      where: {
+        projectId,
+        role: PrismaRole.PROJECT_MANAGER,
+        id: { not: excludedMemberId },
+      },
+    });
+
+    if (managerCount === 0) {
+      throw new ConflictException(
+        'Project must keep at least one project manager',
+      );
+    }
   }
 
   private async assertProjectCanLock(projectId: string) {

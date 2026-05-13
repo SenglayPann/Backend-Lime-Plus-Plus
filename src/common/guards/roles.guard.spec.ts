@@ -79,19 +79,19 @@ describe('RolesGuard', () => {
   });
 
   describe('role hierarchy', () => {
-    it('ORGANIZATION_OWNER should satisfy ADMIN requirement', () => {
+    it('ORGANIZATION_MANAGER should NOT satisfy ADMIN requirement', () => {
       jest
         .spyOn(reflector, 'getAllAndOverride')
         .mockReturnValue(['ADMIN'] as Role[]);
-      const context = createMockContext(['ORGANIZATION_OWNER']);
-      expect(guard.canActivate(context)).toBe(true);
+      const context = createMockContext(['ORGANIZATION_MANAGER']);
+      expect(guard.canActivate(context)).toBe(false);
     });
 
-    it('ORGANIZATION_OWNER should satisfy PROJECT_MEMBER requirement', () => {
+    it('ORGANIZATION_MANAGER should satisfy PROJECT_MEMBER requirement', () => {
       jest
         .spyOn(reflector, 'getAllAndOverride')
         .mockReturnValue(['PROJECT_MEMBER'] as Role[]);
-      const context = createMockContext(['ORGANIZATION_OWNER']);
+      const context = createMockContext(['ORGANIZATION_MANAGER']);
       expect(guard.canActivate(context)).toBe(true);
     });
 
@@ -156,7 +156,7 @@ describe('RolesGuard', () => {
     it('should deny access if user has none of the required roles', () => {
       jest
         .spyOn(reflector, 'getAllAndOverride')
-        .mockReturnValue(['ADMIN', 'ORGANIZATION_OWNER'] as Role[]);
+        .mockReturnValue(['ADMIN', 'ORGANIZATION_MANAGER'] as Role[]);
       const context = createMockContext(['PROJECT_MEMBER']);
       expect(guard.canActivate(context)).toBe(false);
     });

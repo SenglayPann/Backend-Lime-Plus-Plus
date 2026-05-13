@@ -13,6 +13,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
 import { AuthService, TokenResponse } from './auth.service';
+import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from '../common/guards';
 import { CurrentUser } from '../common/decorators';
 import { ConfigService } from '@nestjs/config';
@@ -27,6 +28,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
+    private usersService: UsersService,
   ) {}
 
   /**
@@ -88,13 +90,7 @@ export class AuthController {
    */
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  getProfile(@CurrentUser() user: RequestWithUser['user']) {
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      roles: user.roles,
-    };
+  async getProfile(@CurrentUser() user: RequestWithUser['user']) {
+    return this.usersService.getUserProfileWithScopes(user.id);
   }
 }

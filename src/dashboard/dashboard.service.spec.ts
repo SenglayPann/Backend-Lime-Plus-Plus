@@ -32,7 +32,7 @@ describe('DashboardService', () => {
   };
 
   const mockProjectAccessService = {
-    getAccessibleProjectIds: jest.fn(),
+    getManageableProjectIds: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -50,7 +50,7 @@ describe('DashboardService', () => {
 
   describe('getGlobalStats', () => {
     it('should return global stats', async () => {
-      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([
+      mockProjectAccessService.getManageableProjectIds.mockResolvedValue([
         'p1',
         'p2',
       ]);
@@ -75,7 +75,7 @@ describe('DashboardService', () => {
     });
 
     it('should handle zero scores for avgContribution', async () => {
-      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([]);
+      mockProjectAccessService.getManageableProjectIds.mockResolvedValue([]);
 
       const result = await service.getGlobalStats('admin', ['ADMIN']);
 
@@ -90,7 +90,7 @@ describe('DashboardService', () => {
 
   describe('getRecentActivity', () => {
     it('should return recent PRs mapped', async () => {
-      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([
+      mockProjectAccessService.getManageableProjectIds.mockResolvedValue([
         'p1',
       ]);
       mockPrismaService.contributionEvent.findMany.mockResolvedValue([
@@ -122,7 +122,7 @@ describe('DashboardService', () => {
 
   describe('getTopDepartments', () => {
     it('should calculate and return top departments', async () => {
-      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([
+      mockProjectAccessService.getManageableProjectIds.mockResolvedValue([
         'p1',
       ]);
       mockPrismaService.department.findMany.mockResolvedValue([

@@ -136,28 +136,21 @@ async function main() {
   // Create User Roles
   await prisma.userRole.createMany({
     data: [
-      // Organization Owner
+      // Organization Manager
       {
         userId: adminUser.id,
-        role: 'ORGANIZATION_OWNER',
+        role: 'ORGANIZATION_MANAGER',
         organizationId: universityOrg.id,
       },
       // Admin
       {
         userId: adminUser.id,
         role: 'ADMIN',
-        organizationId: universityOrg.id,
       },
       // Department Manager
       {
         userId: profUser.id,
         role: 'DEPARTMENT_MANAGER',
-        departmentId: csDept.id,
-      },
-      // Project Manager
-      {
-        userId: managerUser.id,
-        role: 'PROJECT_MANAGER',
         departmentId: csDept.id,
       },
     ],

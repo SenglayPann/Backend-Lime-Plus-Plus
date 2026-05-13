@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
   Query,
@@ -17,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpsertProjectMemberDto } from './dto/upsert-project-member.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -66,6 +68,46 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Get project details' })
   async findOne(@Param('id') id: string, @Request() req: RequestWithUser) {
     return this.projectsService.findOne(id, req.user.id, req.user.roles);
+  }
+
+  @Get(':id/members')
+  @Roles(Role.PROJECT_MEMBER)
+  @ApiOperation({ summary: 'List project members' })
+  async listMembers(@Param('id') id: string, @Request() req: RequestWithUser) {
+    return this.projectsService.listMembers(id, req.user.id, req.user.roles);
+  }
+
+  @Post(':id/members')
+  @Roles(Role.PROJECT_MANAGER)
+  @ApiOperation({ summary: 'Add or update a project member' })
+  async upsertMember(
+    @Param('id') id: string,
+    @Body() dto: UpsertProjectMemberDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.projectsService.upsertMember(
+      id,
+      dto.user_id,
+      dto.role || Role.PROJECT_MEMBER,
+      req.user.id,
+      req.user.roles,
+    );
+  }
+
+  @Delete(':id/members/:memberId')
+  @Roles(Role.PROJECT_MANAGER)
+  @ApiOperation({ summary: 'Remove a project member' })
+  async removeMember(
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.projectsService.removeMember(
+      id,
+      memberId,
+      req.user.id,
+      req.user.roles,
+    );
   }
 
   @Post(':id/lock')

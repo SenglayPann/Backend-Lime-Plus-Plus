@@ -287,5 +287,49 @@ describe('ScoringService', () => {
 
       expect(calcSpy).toHaveBeenCalledWith('p1');
     });
+
+    it('blocks project managers from applying score overrides', async () => {
+      await expect(
+        service.applyOverride('p1', 'u1', 5, 'Bonus', 'manager', [
+          'PROJECT_MANAGER',
+        ]),
+      ).rejects.toThrow(
+        'You do not have permission to override project scores',
+      );
+      expect(mockPrismaService.scoreOverride.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getUserScore', () => {
+    it('allows users to view their own score after project view check', async () => {
+      mockPrismaService.contributionScore.findUnique.mockResolvedValue({
+        projectId: 'p1',
+        userId: 'u1',
+      });
+
+      await service.getUserScore('p1', 'u1', 'u1', ['PROJECT_MEMBER']);
+
+      expect(
+        mockProjectAccessService.assertCanViewProject,
+      ).toHaveBeenCalledWith('u1', ['PROJECT_MEMBER'], 'p1');
+      expect(
+        mockProjectAccessService.assertCanManageProject,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('requires scoped project management to view another user score', async () => {
+      mockPrismaService.contributionScore.findUnique.mockResolvedValue({
+        projectId: 'p1',
+        userId: 'u2',
+      });
+
+      await service.getUserScore('p1', 'u2', 'manager', [
+        'ORGANIZATION_MANAGER',
+      ]);
+
+      expect(
+        mockProjectAccessService.assertCanManageProject,
+      ).toHaveBeenCalledWith('manager', ['ORGANIZATION_MANAGER'], 'p1');
+    });
   });
 });

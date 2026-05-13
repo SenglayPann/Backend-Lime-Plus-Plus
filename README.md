@@ -50,6 +50,13 @@ Default values are already set for local development.
 
 ### 4. Run the App
 
+Apply schema migrations before starting the API:
+
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
+
 ```bash
 # Development mode (with hot reload)
 npm run start:dev
@@ -135,6 +142,17 @@ Another PostgreSQL instance is running. Either stop it or change the port in `do
 # Regenerate Prisma client
 npx prisma generate
 
+# Apply pending schema migrations
+npx prisma migrate deploy
+
 # Reset database
 npx prisma db push --force-reset
 ```
+
+### GitHub sign-in returns AuthFailed
+
+If GitHub accepts the credentials but the frontend redirects to
+`/login?error=AuthFailed`, first check the backend profile endpoint:
+`GET /api/v1/auth/me`. A 500 response usually means the local database schema
+is behind the generated Prisma client. Apply the pending migrations and
+restart the backend.

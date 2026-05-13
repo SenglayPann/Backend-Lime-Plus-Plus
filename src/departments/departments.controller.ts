@@ -8,6 +8,7 @@ import {
   Delete,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,6 +22,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Departments')
 @ApiBearerAuth()
@@ -30,42 +32,65 @@ export class DepartmentsController {
   constructor(private readonly departmentsService: DepartmentsService) {}
 
   @Post()
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Create a new department' })
-  async create(@Body() createDepartmentDto: CreateDepartmentDto) {
-    return this.departmentsService.create(createDepartmentDto);
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({ summary: 'Create a new department (Org Manager+)' })
+  async create(
+    @Body() createDepartmentDto: CreateDepartmentDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.departmentsService.create(
+      createDepartmentDto,
+      req.user.id,
+      req.user.roles,
+    );
   }
 
   @Get()
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'List all departments' })
+  @Roles(Role.PROJECT_MEMBER)
+  @ApiOperation({ summary: 'List accessible departments' })
   @ApiQuery({
     name: 'organization_id',
     required: false,
     description: 'Filter by organization ID',
   })
-  async findAll(@Query('organization_id') organizationId?: string) {
-    return this.departmentsService.findAll(organizationId);
+  async findAll(
+    @Query('organization_id') organizationId: string | undefined,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.departmentsService.findAll(
+      req.user.id,
+      req.user.roles,
+      organizationId,
+    );
   }
 
   @Get(':id')
-  @Roles(Role.DEPARTMENT_MANAGER)
+  @Roles(Role.PROJECT_MEMBER)
   @ApiOperation({ summary: 'Get department details' })
-  async findOne(@Param('id') id: string) {
-    return this.departmentsService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req: RequestWithUser) {
+    return this.departmentsService.findOne(id, req.user.id, req.user.roles);
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Update a department' })
-  async update(@Param('id') id: string, @Body() updateDepartmentDto: any) {
-    return this.departmentsService.update(id, updateDepartmentDto);
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({ summary: 'Update a department (Org Manager+)' })
+  async update(
+    @Param('id') id: string,
+    @Body() updateDepartmentDto: any,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.departmentsService.update(
+      id,
+      updateDepartmentDto,
+      req.user.id,
+      req.user.roles,
+    );
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Delete a department' })
-  async remove(@Param('id') id: string) {
-    return this.departmentsService.remove(id);
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({ summary: 'Delete a department (Org Manager+)' })
+  async remove(@Param('id') id: string, @Request() req: RequestWithUser) {
+    return this.departmentsService.remove(id, req.user.id, req.user.roles);
   }
 }

@@ -2,7 +2,7 @@ import { SetMetadata } from '@nestjs/common';
 
 // Role enum values matching Prisma schema
 export type Role =
-  | 'ORGANIZATION_OWNER'
+  | 'ORGANIZATION_MANAGER'
   | 'ADMIN'
   | 'DEPARTMENT_MANAGER'
   | 'PROJECT_MANAGER'

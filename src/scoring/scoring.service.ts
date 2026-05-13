@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { Project, Task, ContributionEvent } from '../generated/prisma';
@@ -363,11 +369,7 @@ export class ScoringService {
     actorId: string,
     actorRoles: Role[],
   ): Promise<void> {
-    await this.projectAccessService.assertCanManageProject(
-      actorId,
-      actorRoles,
-      projectId,
-    );
+    await this.assertCanApplyScoreOverride(projectId, actorId, actorRoles);
 
     const membership = await this.prisma.projectMember.findFirst({
       where: {
@@ -386,9 +388,9 @@ export class ScoringService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
-    if (!project) throw new Error('Project not found');
+    if (!project) throw new NotFoundException('Project not found');
     if (project.status === 'LOCKED')
-      throw new Error('Cannot override score in a locked project');
+      throw new ConflictException('Cannot override score in a locked project');
 
     await this.prisma.scoreOverride.create({
       data: {
@@ -430,14 +432,12 @@ export class ScoringService {
     actorId: string,
     actorRoles: Role[],
   ) {
-    if (
-      actorRoles.includes('ADMIN') ||
-      actorRoles.includes('ORGANIZATION_OWNER')
-    ) {
+    if (actorRoles.includes('ADMIN')) {
       return;
     }
 
     if (
+      actorRoles.includes('ORGANIZATION_MANAGER') ||
       actorRoles.includes('DEPARTMENT_MANAGER') ||
       actorRoles.includes('PROJECT_MANAGER')
     ) {
@@ -451,6 +451,32 @@ export class ScoringService {
 
     throw new ForbiddenException(
       'You can only view your own contribution details',
+    );
+  }
+
+  private async assertCanApplyScoreOverride(
+    projectId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    if (actorRoles.includes('ADMIN')) {
+      return;
+    }
+
+    if (
+      actorRoles.includes('ORGANIZATION_MANAGER') ||
+      actorRoles.includes('DEPARTMENT_MANAGER')
+    ) {
+      await this.projectAccessService.assertCanManageProject(
+        actorId,
+        actorRoles,
+        projectId,
+      );
+      return;
+    }
+
+    throw new ForbiddenException(
+      'You do not have permission to override project scores',
     );
   }
 }

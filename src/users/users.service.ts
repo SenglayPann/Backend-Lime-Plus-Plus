@@ -9,6 +9,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '../generated/prisma';
 import type { Role as AccessRole } from '../common/decorators/roles.decorator';
+import { RoleDelegationService } from '../common/access/role-delegation.service';
+import { UserVisibilityService } from '../common/access/user-visibility.service';
 
 export interface GitHubProfile {
   id: string;
@@ -23,6 +25,8 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private roleDelegationService: RoleDelegationService,
+    private userVisibilityService: UserVisibilityService,
   ) {}
 
   async findById(id: string) {
@@ -135,30 +139,111 @@ export class UsersService {
     };
   }
 
+  async getUserProfileWithScopes(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        githubUsername: true,
+        avatarUrl: true,
+        userRoles: {
+          include: {
+            organization: true,
+            department: true,
+          },
+        },
+        projectMembers: {
+          select: {
+            projectId: true,
+            role: true,
+            project: {
+              include: {
+                department: {
+                  include: { organization: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) return null;
+
+    const roles = await this.getUserRoles(user.id);
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      githubUsername: user.githubUsername,
+      avatarUrl: user.avatarUrl,
+      roles,
+      scopes: {
+        organizations: user.userRoles
+          .filter((role) => role.role === Role.ORGANIZATION_MANAGER)
+          .map((role) => ({
+            id: role.organizationId,
+            name: role.organization?.name || 'Unknown organization',
+            role: role.role,
+          }))
+          .filter((scope) => Boolean(scope.id)),
+        departments: user.userRoles
+          .filter((role) => role.role === Role.DEPARTMENT_MANAGER)
+          .map((role) => ({
+            id: role.departmentId,
+            name: role.department?.name || 'Unknown department',
+            role: role.role,
+            organizationId: role.department?.organizationId || null,
+          }))
+          .filter((scope) => Boolean(scope.id)),
+        projects: user.projectMembers.map((member) => ({
+          id: member.projectId,
+          name: member.project.name,
+          role: member.role,
+          departmentId: member.project.departmentId,
+          departmentName: member.project.department.name,
+          organizationId: member.project.department.organizationId,
+          organizationName: member.project.department.organization.name,
+        })),
+      },
+    };
+  }
+
   async assignRole(
     userId: string,
-    role: string,
+    role: Role,
+    actorId: string,
+    actorRoles: AccessRole[],
     organizationId?: string,
     departmentId?: string,
   ) {
-    return this.prisma.userRole.create({
-      data: {
-        userId,
-        role: role as Role,
-        organizationId,
-        departmentId,
-      },
-    });
+    return this.roleDelegationService.assignUserRole(
+      actorId,
+      actorRoles,
+      userId,
+      role,
+      organizationId,
+      departmentId,
+    );
   }
 
-  async removeRole(roleId: string) {
-    return this.prisma.userRole.delete({
-      where: { id: roleId },
-    });
+  async removeRole(roleId: string, actorId: string, actorRoles: AccessRole[]) {
+    return this.roleDelegationService.removeUserRole(
+      actorId,
+      actorRoles,
+      roleId,
+    );
   }
 
-  async findAll() {
+  async findAll(actorId: string, actorRoles: AccessRole[]) {
     return this.prisma.user.findMany({
+      where: this.userVisibilityService.buildVisibleUserWhere(
+        actorId,
+        actorRoles,
+      ),
       select: {
         id: true,
         githubUserId: true,
@@ -167,7 +252,22 @@ export class UsersService {
         name: true,
         avatarUrl: true,
         createdAt: true,
-        userRoles: true,
+        userRoles: {
+          include: {
+            organization: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
+        projectMembers: {
+          select: {
+            project: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -181,77 +281,22 @@ export class UsersService {
       return;
     }
 
-    if (
-      actorRoles.includes('ADMIN') ||
-      actorRoles.includes('ORGANIZATION_OWNER')
-    ) {
+    if (actorRoles.includes('ADMIN')) {
       return;
     }
 
-    if (actorRoles.includes('DEPARTMENT_MANAGER')) {
-      const match = await this.prisma.user.findFirst({
-        where: {
-          id: targetUserId,
-          OR: [
-            {
-              userRoles: {
-                some: {
-                  department: {
-                    userRoles: {
-                      some: {
-                        userId: actorId,
-                        role: Role.DEPARTMENT_MANAGER,
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            {
-              projectMembers: {
-                some: {
-                  project: {
-                    department: {
-                      userRoles: {
-                        some: {
-                          userId: actorId,
-                          role: Role.DEPARTMENT_MANAGER,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          ],
-        },
-        select: { id: true },
-      });
+    const visibleUser = await this.prisma.user.findFirst({
+      where: {
+        AND: [
+          { id: targetUserId },
+          this.userVisibilityService.buildVisibleUserWhere(actorId, actorRoles),
+        ],
+      },
+      select: { id: true },
+    });
 
-      if (match) {
-        return;
-      }
-    }
-
-    if (actorRoles.includes('PROJECT_MANAGER')) {
-      const sharedManagedProject = await this.prisma.projectMember.findFirst({
-        where: {
-          userId: targetUserId,
-          project: {
-            members: {
-              some: {
-                userId: actorId,
-                role: Role.PROJECT_MANAGER,
-              },
-            },
-          },
-        },
-        select: { id: true },
-      });
-
-      if (sharedManagedProject) {
-        return;
-      }
+    if (visibleUser) {
+      return;
     }
 
     throw new ForbiddenException(

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TaskStatus } from '../generated/prisma';
+import { Prisma, TaskStatus } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
 import type { Role } from '../common/decorators/roles.decorator';
 
@@ -22,7 +22,7 @@ export class TasksService {
     assigneeId?: string,
     status?: string,
   ) {
-    let scopedProjectIds: string[] | undefined;
+    const statusFilter = (status as TaskStatus) || undefined;
 
     if (projectId) {
       await this.projectAccessService.assertCanViewProject(
@@ -30,23 +30,74 @@ export class TasksService {
         actorRoles,
         projectId,
       );
-      scopedProjectIds = [projectId];
-    } else {
-      scopedProjectIds = await this.projectAccessService.getAccessibleProjectIds(
+
+      const canManageProject = await this.projectAccessService.canManageProject(
         actorId,
         actorRoles,
+        projectId,
       );
+
+      if (!canManageProject && assigneeId && assigneeId !== actorId) {
+        return [];
+      }
+
+      return this.prisma.task.findMany({
+        where: {
+          projectId,
+          assigneeId: canManageProject ? assigneeId || undefined : actorId,
+          status: statusFilter,
+        },
+        include: {
+          project: true,
+          assignee: true,
+          pullRequests: true,
+        },
+      });
     }
 
-    if (scopedProjectIds.length === 0) {
+    const [accessibleProjectIds, manageableProjectIds] = await Promise.all([
+      this.projectAccessService.getAccessibleProjectIds(actorId, actorRoles),
+      this.projectAccessService.getManageableProjectIds(actorId, actorRoles),
+    ]);
+
+    if (accessibleProjectIds.length === 0) {
       return [];
     }
 
+    const manageableProjectIdSet = new Set(manageableProjectIds);
+    const ownOnlyProjectIds = accessibleProjectIds.filter(
+      (id) => !manageableProjectIdSet.has(id),
+    );
+    const scopedClauses: Prisma.TaskWhereInput[] = [];
+
+    if (manageableProjectIds.length > 0) {
+      scopedClauses.push({
+        projectId: { in: manageableProjectIds },
+        assigneeId: assigneeId || undefined,
+      });
+    }
+
+    if (
+      ownOnlyProjectIds.length > 0 &&
+      (!assigneeId || assigneeId === actorId)
+    ) {
+      scopedClauses.push({
+        projectId: { in: ownOnlyProjectIds },
+        assigneeId: actorId,
+      });
+    }
+
+    if (scopedClauses.length === 0) {
+      return [];
+    }
+
+    const projectScope =
+      scopedClauses.length === 1 ? scopedClauses[0] : { OR: scopedClauses };
+
     return this.prisma.task.findMany({
       where: {
-        projectId: { in: scopedProjectIds },
-        assigneeId: assigneeId || undefined,
-        status: (status as TaskStatus) || undefined,
+        ...projectScope,
+        status: statusFilter,
       },
       include: {
         project: true,
@@ -87,9 +138,7 @@ export class TasksService {
     });
 
     if (!assigneeMembership) {
-      throw new BadRequestException(
-        'Assignee must be a member of the project',
-      );
+      throw new BadRequestException('Assignee must be a member of the project');
     }
 
     return this.prisma.task.update({

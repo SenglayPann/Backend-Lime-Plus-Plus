@@ -11,7 +11,7 @@ export class DashboardService {
   ) {}
 
   async getGlobalStats(actorId: string, actorRoles: Role[]) {
-    const projectIds = await this.projectAccessService.getAccessibleProjectIds(
+    const projectIds = await this.projectAccessService.getManageableProjectIds(
       actorId,
       actorRoles,
     );
@@ -59,7 +59,7 @@ export class DashboardService {
   }
 
   async getRecentActivity(actorId: string, actorRoles: Role[]) {
-    const projectIds = await this.projectAccessService.getAccessibleProjectIds(
+    const projectIds = await this.projectAccessService.getManageableProjectIds(
       actorId,
       actorRoles,
     );
@@ -93,7 +93,7 @@ export class DashboardService {
   }
 
   async getTopDepartments(actorId: string, actorRoles: Role[]) {
-    const projectIds = await this.projectAccessService.getAccessibleProjectIds(
+    const projectIds = await this.projectAccessService.getManageableProjectIds(
       actorId,
       actorRoles,
     );

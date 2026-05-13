@@ -1,12 +1,11 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { TasksService } from './tasks.service';
+import { ProjectAccessService } from '../common/access/project-access.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { NotFoundException } from '@nestjs/common';
-import { TaskStatus } from '../generated/prisma';
+import { TasksService } from './tasks.service';
 
 describe('TasksService', () => {
   let service: TasksService;
-  let prismaService: PrismaService;
 
   const mockPrismaService = {
     task: {
@@ -14,6 +13,17 @@ describe('TasksService', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    projectMember: {
+      findFirst: jest.fn(),
+    },
+  };
+
+  const mockProjectAccessService = {
+    assertCanViewProject: jest.fn(),
+    canManageProject: jest.fn(),
+    getAccessibleProjectIds: jest.fn(),
+    getManageableProjectIds: jest.fn(),
+    assertCanManageProject: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -21,34 +31,40 @@ describe('TasksService', () => {
       providers: [
         TasksService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ProjectAccessService, useValue: mockProjectAccessService },
       ],
     }).compile();
 
     service = module.get<TasksService>(TasksService);
-    prismaService = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
   describe('findAll', () => {
-    it('should return all tasks matching criteria', async () => {
+    it('returns project-wide tasks for project managers', async () => {
       const mockTasks = [{ id: 'task-1' }];
+      mockProjectAccessService.canManageProject.mockResolvedValue(true);
       mockPrismaService.task.findMany.mockResolvedValue(mockTasks);
 
-      const result = await service.findAll('proj-1', 'user-1', 'TODO');
+      const result = await service.findAll(
+        'manager',
+        ['PROJECT_MANAGER'],
+        'proj-1',
+        'student-1',
+        'TODO',
+      );
 
       expect(result).toEqual(mockTasks);
+      expect(
+        mockProjectAccessService.assertCanViewProject,
+      ).toHaveBeenCalledWith('manager', ['PROJECT_MANAGER'], 'proj-1');
       expect(mockPrismaService.task.findMany).toHaveBeenCalledWith({
         where: {
           projectId: 'proj-1',
-          assigneeId: 'user-1',
-          status: 'TODO' as TaskStatus,
+          assigneeId: 'student-1',
+          status: 'TODO',
         },
         include: {
           project: true,
@@ -58,15 +74,16 @@ describe('TasksService', () => {
       });
     });
 
-    it('should ignore undefined criteria', async () => {
-      mockPrismaService.task.findMany.mockResolvedValue([]);
+    it('limits normal project members to their own project tasks', async () => {
+      mockProjectAccessService.canManageProject.mockResolvedValue(false);
+      mockPrismaService.task.findMany.mockResolvedValue([{ id: 'task-1' }]);
 
-      await service.findAll();
+      await service.findAll('student-1', ['PROJECT_MEMBER'], 'proj-1');
 
       expect(mockPrismaService.task.findMany).toHaveBeenCalledWith({
         where: {
-          projectId: undefined,
-          assigneeId: undefined,
+          projectId: 'proj-1',
+          assigneeId: 'student-1',
           status: undefined,
         },
         include: {
@@ -76,10 +93,68 @@ describe('TasksService', () => {
         },
       });
     });
+
+    it('returns no tasks when a normal member filters by another assignee', async () => {
+      mockProjectAccessService.canManageProject.mockResolvedValue(false);
+
+      const result = await service.findAll(
+        'student-1',
+        ['PROJECT_MEMBER'],
+        'proj-1',
+        'student-2',
+      );
+
+      expect(result).toEqual([]);
+      expect(mockPrismaService.task.findMany).not.toHaveBeenCalled();
+    });
+
+    it('mixes project-wide manager scopes with own-only member scopes', async () => {
+      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([
+        'managed-project',
+        'member-project',
+      ]);
+      mockProjectAccessService.getManageableProjectIds.mockResolvedValue([
+        'managed-project',
+      ]);
+      mockPrismaService.task.findMany.mockResolvedValue([]);
+
+      await service.findAll('actor-1', ['PROJECT_MANAGER', 'PROJECT_MEMBER']);
+
+      expect(mockPrismaService.task.findMany).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            {
+              projectId: { in: ['managed-project'] },
+              assigneeId: undefined,
+            },
+            {
+              projectId: { in: ['member-project'] },
+              assigneeId: 'actor-1',
+            },
+          ],
+          status: undefined,
+        },
+        include: {
+          project: true,
+          assignee: true,
+          pullRequests: true,
+        },
+      });
+    });
+
+    it('returns no tasks when the actor has no accessible projects', async () => {
+      mockProjectAccessService.getAccessibleProjectIds.mockResolvedValue([]);
+      mockProjectAccessService.getManageableProjectIds.mockResolvedValue([]);
+
+      const result = await service.findAll('actor-1', ['PROJECT_MEMBER']);
+
+      expect(result).toEqual([]);
+      expect(mockPrismaService.task.findMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('findOne', () => {
-    it('should return a task by id', async () => {
+    it('returns a task by id', async () => {
       const mockTask = { id: 'task-1' };
       mockPrismaService.task.findUnique.mockResolvedValue(mockTask);
 
@@ -92,30 +167,58 @@ describe('TasksService', () => {
       });
     });
 
-    it('should throw NotFoundException if task not found', async () => {
+    it('throws NotFoundException if task is not found', async () => {
       mockPrismaService.task.findUnique.mockResolvedValue(null);
 
-      await expect(service.findOne('task-unknown')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('task-unknown')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('assignTask', () => {
-    it('should assign a task to a user', async () => {
-      const mockTask = { id: 'task-1', assigneeId: 'old-user' };
+    it('assigns a task to an existing project member', async () => {
+      const mockTask = { id: 'task-1', projectId: 'proj-1' };
       const updatedTask = { ...mockTask, assigneeId: 'new-user' };
 
-      // mock findOne internal call
       jest.spyOn(service, 'findOne').mockResolvedValue(mockTask as any);
+      mockPrismaService.projectMember.findFirst.mockResolvedValue({
+        id: 'member-1',
+      });
       mockPrismaService.task.update.mockResolvedValue(updatedTask);
 
-      const result = await service.assignTask('task-1', 'new-user');
+      const result = await service.assignTask('task-1', 'new-user', 'manager', [
+        'PROJECT_MANAGER',
+      ]);
 
-      expect(service.findOne).toHaveBeenCalledWith('task-1');
+      expect(
+        mockProjectAccessService.assertCanManageProject,
+      ).toHaveBeenCalledWith('manager', ['PROJECT_MANAGER'], 'proj-1');
+      expect(mockPrismaService.projectMember.findFirst).toHaveBeenCalledWith({
+        where: {
+          projectId: 'proj-1',
+          userId: 'new-user',
+        },
+        select: { id: true },
+      });
       expect(mockPrismaService.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
         data: { assigneeId: 'new-user' },
       });
       expect(result).toEqual(updatedTask);
+    });
+
+    it('rejects task assignment to a non-member', async () => {
+      jest
+        .spyOn(service, 'findOne')
+        .mockResolvedValue({ id: 'task-1', projectId: 'proj-1' } as any);
+      mockPrismaService.projectMember.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.assignTask('task-1', 'outsider', 'manager', [
+          'PROJECT_MANAGER',
+        ]),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { RoleDelegationService } from '../common/access/role-delegation.service';
+import { UserVisibilityService } from '../common/access/user-visibility.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -12,6 +14,7 @@ describe('UsersService', () => {
       create: jest.fn(),
       update: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
     },
     userRole: { findMany: jest.fn(), create: jest.fn(), delete: jest.fn() },
     projectMember: { findMany: jest.fn(), findFirst: jest.fn() },
@@ -20,6 +23,13 @@ describe('UsersService', () => {
   const mockConfigService = {
     get: jest.fn().mockReturnValue('test-secret'),
   };
+  const mockRoleDelegationService = {
+    assignUserRole: jest.fn(),
+    removeUserRole: jest.fn(),
+  };
+  const mockUserVisibilityService = {
+    buildVisibleUserWhere: jest.fn().mockReturnValue({ id: 'visible' }),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -27,11 +37,16 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: RoleDelegationService, useValue: mockRoleDelegationService },
+        { provide: UserVisibilityService, useValue: mockUserVisibilityService },
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
     jest.clearAllMocks();
+    mockUserVisibilityService.buildVisibleUserWhere.mockReturnValue({
+      id: 'visible',
+    });
   });
 
   describe('findOrCreateFromGitHub', () => {
@@ -165,43 +180,70 @@ describe('UsersService', () => {
 
       expect(result).toEqual({ ...mockUser, roles: mockRoles });
     });
+
+    it('should use scoped visibility for non-admin user details', async () => {
+      const mockUser = { id: 'user-2', name: 'Scoped User' };
+
+      mockPrismaService.user.findFirst.mockResolvedValue({ id: 'user-2' });
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+      mockPrismaService.userRole.findMany.mockResolvedValue([]);
+      mockUserVisibilityService.buildVisibleUserWhere.mockReturnValue({
+        OR: [{ id: 'visible-user' }],
+      });
+
+      const result = await service.getUserWithRoles('user-2', 'manager', [
+        'ORGANIZATION_MANAGER',
+      ]);
+
+      expect(result).toEqual({ ...mockUser, roles: [] });
+      expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          AND: [{ id: 'user-2' }, { OR: [{ id: 'visible-user' }] }],
+        },
+        select: { id: true },
+      });
+    });
   });
 
   describe('assignRole', () => {
     it('should assign a role to a user', async () => {
       const newRole = { id: 'role-1', userId: 'user-1', role: 'ADMIN' };
-      mockPrismaService.userRole.create.mockResolvedValue(newRole);
+      mockRoleDelegationService.assignUserRole.mockResolvedValue(newRole);
 
       const result = await service.assignRole(
         'user-1',
         'ADMIN',
+        'admin',
+        ['ADMIN'],
         'org-1',
         'dept-1',
       );
 
       expect(result).toEqual(newRole);
-      expect(mockPrismaService.userRole.create).toHaveBeenCalledWith({
-        data: {
-          userId: 'user-1',
-          role: 'ADMIN',
-          organizationId: 'org-1',
-          departmentId: 'dept-1',
-        },
-      });
+      expect(mockRoleDelegationService.assignUserRole).toHaveBeenCalledWith(
+        'admin',
+        ['ADMIN'],
+        'user-1',
+        'ADMIN',
+        'org-1',
+        'dept-1',
+      );
     });
   });
 
   describe('removeRole', () => {
     it('should remove a role', async () => {
       const deletedRole = { id: 'role-1' };
-      mockPrismaService.userRole.delete.mockResolvedValue(deletedRole);
+      mockRoleDelegationService.removeUserRole.mockResolvedValue(deletedRole);
 
-      const result = await service.removeRole('role-1');
+      const result = await service.removeRole('role-1', 'admin', ['ADMIN']);
 
       expect(result).toEqual(deletedRole);
-      expect(mockPrismaService.userRole.delete).toHaveBeenCalledWith({
-        where: { id: 'role-1' },
-      });
+      expect(mockRoleDelegationService.removeUserRole).toHaveBeenCalledWith(
+        'admin',
+        ['ADMIN'],
+        'role-1',
+      );
     });
   });
 
@@ -210,10 +252,11 @@ describe('UsersService', () => {
       const mockUsers = [{ id: 'user-1', userRoles: [] }];
       mockPrismaService.user.findMany.mockResolvedValue(mockUsers);
 
-      const result = await service.findAll();
+      const result = await service.findAll('admin', ['ADMIN']);
 
       expect(result).toEqual(mockUsers);
       expect(mockPrismaService.user.findMany).toHaveBeenCalledWith({
+        where: { id: 'visible' },
         select: {
           id: true,
           githubUserId: true,
@@ -222,7 +265,22 @@ describe('UsersService', () => {
           name: true,
           avatarUrl: true,
           createdAt: true,
-          userRoles: true,
+          userRoles: {
+            include: {
+              organization: { select: { id: true, name: true } },
+              department: { select: { id: true, name: true } },
+            },
+          },
+          projectMembers: {
+            select: {
+              project: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
         },
       });
     });
