@@ -136,6 +136,36 @@ export class ReportsController {
     return this.csvFile(csv, `lime_project_scores_${projectId}.csv`);
   }
 
+  @Get('organizations/:organizationId/csv')
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({ summary: 'Export organization performance scores as CSV' })
+  async organizationCsv(
+    @Param('organizationId') organizationId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    const csv = await this.reportsService.exportOrganizationCsv(
+      organizationId,
+      req.user.id,
+      req.user.roles,
+    );
+    return this.csvFile(csv, `lime_organization_scores_${organizationId}.csv`);
+  }
+
+  @Get('departments/:departmentId/csv')
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'Export department performance scores as CSV' })
+  async departmentCsv(
+    @Param('departmentId') departmentId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    const csv = await this.reportsService.exportDepartmentCsv(
+      departmentId,
+      req.user.id,
+      req.user.roles,
+    );
+    return this.csvFile(csv, `lime_department_scores_${departmentId}.csv`);
+  }
+
   private pdfFile(buffer: Buffer, filename: string) {
     return new StreamableFile(buffer, {
       type: 'application/pdf',

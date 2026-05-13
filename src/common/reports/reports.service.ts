@@ -5,6 +5,8 @@ import { Parser } from 'json2csv';
 import { ProjectStatus } from '../../generated/prisma';
 import { ScoreBreakdown } from '../../scoring/scoring.service';
 import { ProjectAccessService } from '../access/project-access.service';
+import { OrganizationAccessService } from '../access/organization-access.service';
+import { DepartmentAccessService } from '../access/department-access.service';
 import type { Role } from '../decorators/roles.decorator';
 
 type ScoreSummary = {
@@ -33,6 +35,8 @@ export class ReportsService {
     private prisma: PrismaService,
     private pdfService: PdfService,
     private projectAccessService: ProjectAccessService,
+    private organizationAccessService: OrganizationAccessService,
+    private departmentAccessService: DepartmentAccessService,
   ) {}
 
   async exportIndividualPdf(
@@ -359,12 +363,147 @@ export class ReportsService {
     return `\uFEFF${parser.parse(data)}`;
   }
 
+  async exportOrganizationCsv(
+    organizationId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ): Promise<string> {
+    await this.organizationAccessService.assertCanManageOrganization(
+      actorId,
+      actorRoles,
+      organizationId,
+    );
+
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { id: true, name: true },
+    });
+
+    if (!organization) throw new NotFoundException('Organization not found');
+
+    const projects = await this.prisma.project.findMany({
+      where: { department: { organizationId } },
+      include: this.scopeExportProjectInclude(),
+      orderBy: { name: 'asc' },
+    });
+
+    return this.exportScopeCsv(
+      'organization',
+      organization.id,
+      organization.name,
+      projects,
+    );
+  }
+
+  async exportDepartmentCsv(
+    departmentId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ): Promise<string> {
+    await this.departmentAccessService.assertCanManageDepartment(
+      actorId,
+      actorRoles,
+      departmentId,
+    );
+
+    const department = await this.prisma.department.findUnique({
+      where: { id: departmentId },
+      select: { id: true, name: true },
+    });
+
+    if (!department) throw new NotFoundException('Department not found');
+
+    const projects = await this.prisma.project.findMany({
+      where: { departmentId },
+      include: this.scopeExportProjectInclude(),
+      orderBy: { name: 'asc' },
+    });
+
+    return this.exportScopeCsv(
+      'department',
+      department.id,
+      department.name,
+      projects,
+    );
+  }
+
   private getScoreSummary(breakdown: ScoreBreakdown): ScoreSummary {
     return {
       taskCompletionPoints: this.sumScores(breakdown.TASK_COMPLETED),
       reviewPoints: this.sumScores(breakdown.REVIEWS),
       overrideDelta: this.sumScores(breakdown.OVERRIDES),
     };
+  }
+
+  private scopeExportProjectInclude() {
+    return {
+      department: { include: { organization: true } },
+      members: { include: { user: true } },
+      tasks: true,
+      pullRequests: { include: { reviews: true } },
+      contributionScores: {
+        include: { user: true },
+        orderBy: { totalScore: 'desc' as const },
+      },
+      scoreOverrides: true,
+    } as const;
+  }
+
+  private exportScopeCsv(
+    scopeType: 'organization' | 'department',
+    scopeId: string,
+    scopeName: string,
+    projects: ScopeExportProject[],
+  ) {
+    const rows = projects.flatMap((project) =>
+      this.buildProjectMemberSummaries(project).map((member, index) => ({
+        scope_type: scopeType,
+        scope_id: scopeId,
+        scope_name: scopeName,
+        organization: project.department.organization.name,
+        department: project.department.name,
+        project_id: project.id,
+        project_name: project.name,
+        project_status: project.status,
+        rank_in_project: index + 1,
+        student_name: member.name,
+        github_username: member.githubUsername,
+        email: member.email,
+        project_role: member.projectRole,
+        total_score: member.totalScore,
+        tasks_done: member.doneTasks,
+        merged_prs: member.mergedPrs,
+        approved_reviews: member.approvedReviews,
+        override_delta: member.overrideDelta,
+        last_score_updated: member.lastScoreUpdated?.toISOString() || '',
+      })),
+    );
+
+    const parser = new Parser({
+      fields: [
+        'scope_type',
+        'scope_id',
+        'scope_name',
+        'organization',
+        'department',
+        'project_id',
+        'project_name',
+        'project_status',
+        'rank_in_project',
+        'student_name',
+        'github_username',
+        'email',
+        'project_role',
+        'total_score',
+        'tasks_done',
+        'merged_prs',
+        'approved_reviews',
+        'override_delta',
+        'last_score_updated',
+      ],
+    });
+
+    return `\uFEFF${parser.parse(rows)}`;
   }
 
   private sumScores(entries: Array<{ score: number }> | undefined): number {
@@ -538,3 +677,41 @@ export class ReportsService {
     return user.name || user.githubUsername || 'Unknown user';
   }
 }
+
+type ScopeExportProject = {
+  id: string;
+  name: string;
+  status: string;
+  department: {
+    name: string;
+    organization: { name: string };
+  };
+  members: Array<{
+    userId: string;
+    role: string;
+    user: {
+      name: string | null;
+      githubUsername: string | null;
+      email: string | null;
+    };
+  }>;
+  tasks: Array<{ assigneeId: string; status: string }>;
+  pullRequests: Array<{
+    authorId: string;
+    status: string;
+    reviews?: Array<{ reviewerId: string; state: string }>;
+  }>;
+  contributionScores: Array<{
+    userId: string;
+    totalScore: number;
+    updatedAt: Date;
+    user: {
+      id: string;
+      name: string | null;
+      githubUsername: string | null;
+      email: string | null;
+    };
+    breakdown: unknown;
+  }>;
+  scoreOverrides: Array<{ userId: string; delta: number }>;
+};

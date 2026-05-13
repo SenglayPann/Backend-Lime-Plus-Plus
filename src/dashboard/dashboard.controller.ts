@@ -1,4 +1,4 @@
-import { Controller, Get, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Request, UseGuards } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -33,6 +33,34 @@ export class DashboardController {
   @ApiOperation({ summary: 'Get top departments within visible scope' })
   async getDepartments(@Request() req: RequestWithUser) {
     return this.dashboardService.getTopDepartments(req.user.id, req.user.roles);
+  }
+
+  @Get('organizations/:organizationId')
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({ summary: 'Get organization dashboard summary' })
+  async getOrganizationDashboard(
+    @Param('organizationId') organizationId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.dashboardService.getOrganizationDashboard(
+      organizationId,
+      req.user.id,
+      req.user.roles,
+    );
+  }
+
+  @Get('departments/:departmentId')
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'Get department dashboard summary' })
+  async getDepartmentDashboard(
+    @Param('departmentId') departmentId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.dashboardService.getDepartmentDashboard(
+      departmentId,
+      req.user.id,
+      req.user.roles,
+    );
   }
 
   @Get('my-contributions')

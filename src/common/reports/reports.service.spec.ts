@@ -4,13 +4,17 @@ import { ReportsService } from './reports.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { ProjectAccessService } from '../access/project-access.service';
+import { OrganizationAccessService } from '../access/organization-access.service';
+import { DepartmentAccessService } from '../access/department-access.service';
 
 describe('ReportsService', () => {
   let service: ReportsService;
 
   const mockPrismaService = {
     contributionScore: { findUnique: jest.fn(), findMany: jest.fn() },
-    project: { findUnique: jest.fn() },
+    project: { findUnique: jest.fn(), findMany: jest.fn() },
+    organization: { findUnique: jest.fn() },
+    department: { findUnique: jest.fn() },
     pullRequest: { findMany: jest.fn() },
     prReview: { findMany: jest.fn() },
     task: { findMany: jest.fn() },
@@ -26,6 +30,12 @@ describe('ReportsService', () => {
     assertCanViewProject: jest.fn(),
     assertCanManageProject: jest.fn(),
   };
+  const mockOrganizationAccessService = {
+    assertCanManageOrganization: jest.fn(),
+  };
+  const mockDepartmentAccessService = {
+    assertCanManageDepartment: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -34,6 +44,11 @@ describe('ReportsService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: PdfService, useValue: mockPdfService },
         { provide: ProjectAccessService, useValue: mockProjectAccessService },
+        {
+          provide: OrganizationAccessService,
+          useValue: mockOrganizationAccessService,
+        },
+        { provide: DepartmentAccessService, useValue: mockDepartmentAccessService },
       ],
     }).compile();
 
@@ -183,6 +198,64 @@ describe('ReportsService', () => {
       expect(csv).toContain('"rank","student_name","github_username"');
       expect(csv).toContain('"User 1","u1","u1@example.com"');
       expect(csv).toContain('100,1,1,1,5');
+    });
+  });
+
+  describe('exportOrganizationCsv', () => {
+    it('generates an organization CSV across scoped projects', async () => {
+      mockPrismaService.organization.findUnique.mockResolvedValue({
+        id: 'org-1',
+        name: 'Demo University',
+      });
+      mockPrismaService.project.findMany.mockResolvedValue([
+        {
+          id: 'project-1',
+          name: 'Capstone',
+          status: 'ACTIVE',
+          department: {
+            name: 'Computer Science',
+            organization: { name: 'Demo University' },
+          },
+          members: [
+            {
+              userId: 'u1',
+              role: 'PROJECT_MEMBER',
+              user: {
+                name: 'User 1',
+                githubUsername: 'u1',
+                email: 'u1@example.com',
+              },
+            },
+          ],
+          tasks: [{ assigneeId: 'u1', status: 'DONE' }],
+          pullRequests: [{ authorId: 'u1', status: 'MERGED', reviews: [] }],
+          contributionScores: [
+            {
+              userId: 'u1',
+              totalScore: 100,
+              updatedAt: new Date('2026-05-04T10:00:00.000Z'),
+              breakdown: {},
+              user: {
+                id: 'u1',
+                name: 'User 1',
+                githubUsername: 'u1',
+                email: 'u1@example.com',
+              },
+            },
+          ],
+          scoreOverrides: [],
+        },
+      ]);
+
+      const csv = await service.exportOrganizationCsv('org-1', 'admin', [
+        'ADMIN',
+      ]);
+
+      expect(csv.charCodeAt(0)).toBe(0xfeff);
+      expect(csv).toContain('"scope_type","scope_id","scope_name"');
+      expect(csv).toContain('"organization","org-1","Demo University"');
+      expect(csv).toContain('"Capstone"');
+      expect(csv).toContain('"User 1","u1","u1@example.com"');
     });
   });
 });
