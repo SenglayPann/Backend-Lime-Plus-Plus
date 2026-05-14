@@ -368,7 +368,7 @@ export class ReportsService {
       ],
     });
 
-    return `\uFEFF${parser.parse(data)}`;
+    return `\uFEFF${parser.parse(this.sanitizeCsvRows(data))}`;
   }
 
   async exportOrganizationCsv(
@@ -511,7 +511,27 @@ export class ReportsService {
       ],
     });
 
-    return `\uFEFF${parser.parse(rows)}`;
+    return `\uFEFF${parser.parse(this.sanitizeCsvRows(rows))}`;
+  }
+
+  private sanitizeCsvRows<T extends Record<string, unknown>>(rows: T[]): T[] {
+    return rows.map(
+      (row) =>
+        Object.fromEntries(
+          Object.entries(row).map(([key, value]) => [
+            key,
+            this.sanitizeCsvValue(value),
+          ]),
+        ) as T,
+    );
+  }
+
+  private sanitizeCsvValue(value: unknown): unknown {
+    if (typeof value !== 'string' || value === '') return value;
+
+    return /^[=+\-@\t\r\n]/.test(value) || /^\s+[=+\-@]/.test(value)
+      ? `'${value}`
+      : value;
   }
 
   private sumScores(entries: Array<{ score: number }> | undefined): number {

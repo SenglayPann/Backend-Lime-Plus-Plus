@@ -199,6 +199,47 @@ describe('ReportsService', () => {
       expect(csv).toContain('"User 1","u1","u1@example.com"');
       expect(csv).toContain('100,1,1,1,5');
     });
+
+    it('prefixes formula-like CSV values to avoid spreadsheet execution', async () => {
+      mockPrismaService.project.findUnique.mockResolvedValue({
+        members: [
+          {
+            userId: 'u1',
+            role: 'PROJECT_MEMBER',
+            user: {
+              name: '=HYPERLINK("https://example.test")',
+              githubUsername: '+attacker',
+              email: ' user@example.com',
+            },
+          },
+        ],
+        tasks: [],
+        pullRequests: [],
+        contributionScores: [
+          {
+            userId: 'u1',
+            totalScore: 10,
+            updatedAt: new Date('2026-05-04T10:00:00.000Z'),
+            breakdown: {},
+            user: {
+              id: 'u1',
+              name: '=HYPERLINK("https://example.test")',
+              githubUsername: '+attacker',
+              email: ' user@example.com',
+            },
+          },
+        ],
+        scoreOverrides: [],
+      });
+
+      const csv = await service.exportProjectCsv('p1', 'teacher', [
+        'DEPARTMENT_MANAGER',
+      ]);
+
+      expect(csv).toContain(`"'=HYPERLINK`);
+      expect(csv).toContain(`"'+attacker"`);
+      expect(csv).toContain(`" user@example.com"`);
+    });
   });
 
   describe('exportOrganizationCsv', () => {
