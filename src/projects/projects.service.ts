@@ -20,6 +20,7 @@ import {
   Prisma,
 } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { safeUserSelect } from '../common/serialization/safe-user-select';
 import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
@@ -70,7 +71,7 @@ export class ProjectsService {
       },
       include: {
         department: true,
-        members: { include: { user: true } },
+        members: { include: { user: { select: safeUserSelect } } },
         _count: { select: { members: true, tasks: true, pullRequests: true } },
       },
     });
@@ -160,7 +161,7 @@ export class ProjectsService {
       where: { id },
       include: {
         department: true,
-        members: { include: { user: true } },
+        members: { include: { user: { select: safeUserSelect } } },
         _count: { select: { members: true, tasks: true, pullRequests: true } },
       },
     });
@@ -178,7 +179,7 @@ export class ProjectsService {
 
     return this.prisma.projectMember.findMany({
       where: { projectId: id },
-      include: { user: true },
+      include: { user: { select: safeUserSelect } },
       orderBy: [{ role: 'desc' }, { user: { name: 'asc' } }],
     });
   }
@@ -232,7 +233,7 @@ export class ProjectsService {
         source: 'MANUAL',
         createdBy: actorId,
       },
-      include: { user: true },
+      include: { user: { select: safeUserSelect } },
     });
 
     await this.prisma.auditLog.create({

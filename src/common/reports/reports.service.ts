@@ -7,6 +7,7 @@ import { ScoreBreakdown } from '../../scoring/scoring.service';
 import { ProjectAccessService } from '../access/project-access.service';
 import { OrganizationAccessService } from '../access/organization-access.service';
 import { DepartmentAccessService } from '../access/department-access.service';
+import { safeUserSelect } from '../serialization/safe-user-select';
 import type { Role } from '../decorators/roles.decorator';
 
 type ScoreSummary = {
@@ -62,7 +63,7 @@ export class ReportsService {
     const scoreInfo = await this.prisma.contributionScore.findUnique({
       where: { projectId_userId: { projectId, userId } },
       include: {
-        user: true,
+        user: { select: safeUserSelect },
         project: {
           include: {
             department: {
@@ -97,7 +98,7 @@ export class ReportsService {
         }),
         this.prisma.scoreOverride.findMany({
           where: { projectId, userId },
-          include: { overrider: true },
+          include: { overrider: { select: safeUserSelect } },
           orderBy: { createdAt: 'asc' },
         }),
       ],
@@ -184,31 +185,38 @@ export class ReportsService {
       where: { id: projectId },
       include: {
         department: { include: { organization: true } },
-        members: { include: { user: true } },
+        members: { include: { user: { select: safeUserSelect } } },
         tasks: {
           include: {
-            assignee: true,
+            assignee: { select: safeUserSelect },
             pullRequests: {
-              include: { author: true },
+              include: { author: { select: safeUserSelect } },
               orderBy: { createdAt: 'asc' },
             },
           },
           orderBy: { externalTaskId: 'asc' },
         },
         pullRequests: {
-          include: { author: true, task: true, reviews: true },
+          include: {
+            author: { select: safeUserSelect },
+            task: true,
+            reviews: true,
+          },
           orderBy: [{ mergedAt: 'asc' }, { createdAt: 'asc' }],
         },
         contributionScores: {
-          include: { user: true },
+          include: { user: { select: safeUserSelect } },
           orderBy: { totalScore: 'desc' },
         },
         scoreOverrides: {
-          include: { user: true, overrider: true },
+          include: {
+            user: { select: safeUserSelect },
+            overrider: { select: safeUserSelect },
+          },
           orderBy: { createdAt: 'asc' },
         },
         auditLogs: {
-          include: { actor: true },
+          include: { actor: { select: safeUserSelect } },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -315,11 +323,11 @@ export class ReportsService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: {
-        members: { include: { user: true } },
+        members: { include: { user: { select: safeUserSelect } } },
         tasks: true,
         pullRequests: { include: { reviews: true } },
         contributionScores: {
-          include: { user: true },
+          include: { user: { select: safeUserSelect } },
           orderBy: { totalScore: 'desc' },
         },
         scoreOverrides: true,
@@ -438,11 +446,11 @@ export class ReportsService {
   private scopeExportProjectInclude() {
     return {
       department: { include: { organization: true } },
-      members: { include: { user: true } },
+      members: { include: { user: { select: safeUserSelect } } },
       tasks: true,
       pullRequests: { include: { reviews: true } },
       contributionScores: {
-        include: { user: true },
+        include: { user: { select: safeUserSelect } },
         orderBy: { totalScore: 'desc' as const },
       },
       scoreOverrides: true,

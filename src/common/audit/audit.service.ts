@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditAction } from '../../generated/prisma';
 import { ProjectAccessService } from '../access/project-access.service';
+import { safeUserSelect } from '../serialization/safe-user-select';
 import type { Role } from '../decorators/roles.decorator';
 
 @Injectable()
@@ -37,7 +38,7 @@ export class AuditService {
         action: action || undefined,
       },
       include: {
-        actor: true,
+        actor: { select: safeUserSelect },
         project: true,
       },
       orderBy: { createdAt: 'desc' },

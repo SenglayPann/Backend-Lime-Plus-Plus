@@ -72,7 +72,7 @@ describe('TasksService', () => {
         },
         include: {
           project: true,
-          assignee: true,
+          assignee: { select: safeUserSelect },
           pullRequests: true,
         },
       });
@@ -92,7 +92,7 @@ describe('TasksService', () => {
         },
         include: {
           project: true,
-          assignee: true,
+          assignee: { select: safeUserSelect },
           pullRequests: true,
         },
       });
@@ -140,7 +140,7 @@ describe('TasksService', () => {
         },
         include: {
           project: true,
-          assignee: true,
+          assignee: { select: safeUserSelect },
           pullRequests: true,
         },
       });

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Project } from '../../generated/prisma';
+import { safeUserSelect } from '../../common/serialization/safe-user-select';
 import {
   GitHubProjectV2ItemEventPayload,
   GitHubProjectV2ItemPayload,
@@ -163,7 +164,10 @@ export class TaskSyncHandler {
           externalTaskId,
         },
       },
-      include: { assignee: true, pullRequests: true },
+      include: {
+        assignee: { select: safeUserSelect },
+        pullRequests: true,
+      },
     });
 
     if (!task) {

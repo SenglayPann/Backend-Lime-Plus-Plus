@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { safeUserSelect } from '../common/serialization/safe-user-select';
 import { PrismaService } from '../prisma/prisma.service';
 import { PullRequestsService } from './pull-requests.service';
 
@@ -58,9 +59,9 @@ describe('PullRequestsService', () => {
           status: 'MERGED',
         },
         include: {
-          author: true,
+          author: { select: safeUserSelect },
           task: true,
-          reviews: { include: { reviewer: true } },
+          reviews: { include: { reviewer: { select: safeUserSelect } } },
         },
       });
     });
@@ -80,9 +81,9 @@ describe('PullRequestsService', () => {
           status: undefined,
         },
         include: {
-          author: true,
+          author: { select: safeUserSelect },
           task: true,
-          reviews: { include: { reviewer: true } },
+          reviews: { include: { reviewer: { select: safeUserSelect } } },
         },
       });
     });

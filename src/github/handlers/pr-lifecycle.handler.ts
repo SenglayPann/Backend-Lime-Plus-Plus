@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubService } from '../github.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Project, Task, PullRequest, User } from '../../generated/prisma';
+import { Project, Task, PullRequest } from '../../generated/prisma';
+import { safeUserSelect } from '../../common/serialization/safe-user-select';
 import {
   GitHubPullRequestEventPayload,
   GitHubPullRequestPayload,
@@ -111,7 +112,7 @@ export class PrLifecycleHandler {
     );
 
     // Validate task linkage
-    let task: (Task & { assignee: User }) | null = null;
+    let task: (Task & { assignee: SafeUser }) | null = null;
     let validationStatus = 'VALID';
     let statusMessage = '';
 
@@ -129,8 +130,8 @@ export class PrLifecycleHandler {
             externalTaskId: taskId,
           },
         },
-        include: { assignee: true },
-      })) as (Task & { assignee: User }) | null;
+        include: { assignee: { select: safeUserSelect } },
+      })) as (Task & { assignee: SafeUser }) | null;
 
       if (!task) {
         this.logger.warn(
@@ -465,3 +466,13 @@ export class PrLifecycleHandler {
     return user;
   }
 }
+
+type SafeUser = {
+  id: string;
+  githubUserId: string;
+  githubUsername: string | null;
+  email: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+  createdAt: Date;
+};

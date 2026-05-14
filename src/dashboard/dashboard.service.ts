@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProjectAccessService } from '../common/access/project-access.service';
 import { OrganizationAccessService } from '../common/access/organization-access.service';
 import { DepartmentAccessService } from '../common/access/department-access.service';
+import { safeUserSelect } from '../common/serialization/safe-user-select';
 import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
@@ -77,7 +78,7 @@ export class DashboardService {
       orderBy: { createdAt: 'desc' },
       take: 5,
       include: {
-        user: true,
+        user: { select: safeUserSelect },
         project: true,
       },
     });
@@ -172,7 +173,7 @@ export class DashboardService {
         include: {
           userRoles: {
             where: { role: 'DEPARTMENT_MANAGER' },
-            include: { user: true },
+            include: { user: { select: safeUserSelect } },
           },
         },
         orderBy: { name: 'asc' },
@@ -221,7 +222,7 @@ export class DashboardService {
           organization: true,
           userRoles: {
             where: { role: 'DEPARTMENT_MANAGER' },
-            include: { user: true },
+            include: { user: { select: safeUserSelect } },
           },
         },
       }),
@@ -455,10 +456,12 @@ export class DashboardService {
   private dashboardProjectInclude() {
     return {
       department: { include: { organization: true } },
-      members: { include: { user: true } },
-      tasks: { include: { assignee: true } },
-      pullRequests: { include: { author: true, reviews: true } },
-      contributionScores: { include: { user: true } },
+      members: { include: { user: { select: safeUserSelect } } },
+      tasks: { include: { assignee: { select: safeUserSelect } } },
+      pullRequests: {
+        include: { author: { select: safeUserSelect }, reviews: true },
+      },
+      contributionScores: { include: { user: { select: safeUserSelect } } },
       scoreOverrides: true,
     } as const;
   }

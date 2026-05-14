@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PrStatus } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { safeUserSelect } from '../common/serialization/safe-user-select';
 import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
@@ -45,9 +46,9 @@ export class PullRequestsService {
         status: (status as PrStatus) || undefined,
       },
       include: {
-        author: true,
+        author: { select: safeUserSelect },
         task: true,
-        reviews: { include: { reviewer: true } },
+        reviews: { include: { reviewer: { select: safeUserSelect } } },
       },
     });
   }
@@ -55,7 +56,12 @@ export class PullRequestsService {
   async findOne(id: string) {
     const pr = await this.prisma.pullRequest.findUnique({
       where: { id },
-      include: { project: true, author: true, task: true, reviews: true },
+      include: {
+        project: true,
+        author: { select: safeUserSelect },
+        task: true,
+        reviews: true,
+      },
     });
     if (!pr) throw new NotFoundException('Pull Request not found');
     return pr;

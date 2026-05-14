@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, TaskStatus } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { safeUserSelect } from '../common/serialization/safe-user-select';
 import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
@@ -49,7 +50,7 @@ export class TasksService {
         },
         include: {
           project: true,
-          assignee: true,
+          assignee: { select: safeUserSelect },
           pullRequests: true,
         },
       });
@@ -101,7 +102,7 @@ export class TasksService {
       },
       include: {
         project: true,
-        assignee: true,
+        assignee: { select: safeUserSelect },
         pullRequests: true,
       },
     });
@@ -110,7 +111,11 @@ export class TasksService {
   async findOne(id: string) {
     const task = await this.prisma.task.findUnique({
       where: { id },
-      include: { project: true, assignee: true, pullRequests: true },
+      include: {
+        project: true,
+        assignee: { select: safeUserSelect },
+        pullRequests: true,
+      },
     });
     if (!task) throw new NotFoundException('Task not found');
     return task;

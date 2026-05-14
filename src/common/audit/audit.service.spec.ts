@@ -1,4 +1,5 @@
 import { AuditService } from './audit.service';
+import { safeUserSelect } from '../serialization/safe-user-select';
 
 describe('AuditService', () => {
   const prisma = {
@@ -32,7 +33,7 @@ describe('AuditService', () => {
         action: undefined,
       },
       include: {
-        actor: true,
+        actor: { select: safeUserSelect },
         project: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -69,7 +70,7 @@ describe('AuditService', () => {
         action: 'ROLE_CHANGE',
       },
       include: {
-        actor: true,
+        actor: { select: safeUserSelect },
         project: true,
       },
       orderBy: { createdAt: 'desc' },

@@ -115,9 +115,15 @@ describe('WebhooksService', () => {
         mockPushHandler as any,
       );
 
-      expect(serviceWithoutSecret.verifySignature('payload', '')).toBe(false);
-
-      process.env.NODE_ENV = previousNodeEnv;
+      try {
+        expect(serviceWithoutSecret.verifySignature('payload', '')).toBe(false);
+      } finally {
+        if (previousNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = previousNodeEnv;
+        }
+      }
     });
   });
 
