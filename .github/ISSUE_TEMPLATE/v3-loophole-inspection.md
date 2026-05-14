@@ -18,10 +18,10 @@ assignees: ""
   - Core project/task/score validation, duplicate scoring constraints, department update DTOs, score override bounds, and organization license-plan allow-listing are implemented.
 - [x] Phase 6 - GitHub sync correctness
 - [x] Phase 7 - Frontend authorization and UX reliability
-- [ ] Phase 8 - Reports, exports, and operational hardening
+- [x] Phase 8 - Reports, exports, and operational hardening
   - Security headers, rate limits, CSV/PDF safety, and destructive delete guards are implemented.
   - Browser `alert()`/`confirm()` flows have been replaced with app dialogs and inline error states.
-  - Large report exports are still synchronous.
+  - Synchronous report exports are bounded with explicit oversized-export rejection; a background export queue remains a future scaling option if limits are too restrictive.
 - [x] Phase 9 - Dependency remediation
   - High/critical advisories are remediated as of 2026-05-14.
   - Moderate Prisma/Next transitive advisories remain because current audit fixes require breaking/downgrade paths.
@@ -42,10 +42,12 @@ assignees: ""
 - Backend `abf3599` revokes the descendant refresh-token chain when an already-rotated refresh token is reused.
 - Frontend `31ac582` calls backend logout revocation before clearing the NextAuth session.
 - Frontend `8c06437` replaces browser alert/confirm flows with app dialogs and inline report-export errors.
+- Backend `3eb2b18` rejects oversized synchronous report exports before PDF/CSV rendering.
 - Backend verification: `npm test -- --runInBand`, `npm run build`.
 - Frontend verification: `npm test -- --runInBand --watchPathIgnorePatterns=.next`, `npm run build`.
 - Current audit check: `npm audit --audit-level=high` passes in both repos. Moderate transitive advisories remain and need tracked release/upgrade decisions.
 
 ## Next Recommended Items
 
-- Decide whether large report exports need background jobs or streaming before production-scale usage.
+- Re-run full backend/frontend tests, builds, and high-level manual auth/export smoke tests before release.
+- Revisit a background export queue only if real project/organization sizes exceed the synchronous export limits.
