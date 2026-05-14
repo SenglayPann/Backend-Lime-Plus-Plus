@@ -158,6 +158,48 @@ describe('ScoringService', () => {
       );
     });
 
+    it('creates zero-score rows for members without contributions', async () => {
+      mockPrismaService.project.findUnique.mockResolvedValue({
+        id: 'p1',
+        status: 'ACTIVE',
+        scoringConfig: null,
+        members: [{ userId: 'u1' }, { userId: 'u2' }],
+        contributionEvents: [
+          {
+            userId: 'u1',
+            type: 'TASK_COMPLETED',
+            referenceId: 't1',
+            createdAt: new Date(),
+          },
+        ],
+      });
+
+      mockPrismaService.task.findMany.mockResolvedValue([
+        {
+          id: 't1',
+          difficulty: 'LOW',
+          completedAt: new Date(),
+          dueDate: new Date(),
+        },
+      ]);
+      mockPrismaService.prReview.findMany.mockResolvedValue([]);
+      mockPrismaService.scoreOverride.findMany.mockResolvedValue([]);
+
+      await service.calculateProjectScores('p1');
+
+      expect(mockPrismaService.contributionScore.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            userId: 'u2',
+            totalScore: 0,
+          }) as unknown,
+          update: expect.objectContaining({
+            totalScore: 0,
+          }) as unknown,
+        }),
+      );
+    });
+
     it('should ignore events outside evaluation window', async () => {
       const now = new Date();
       const yesterday = new Date(now.getTime() - 86400000);

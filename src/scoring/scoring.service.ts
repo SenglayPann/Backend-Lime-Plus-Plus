@@ -70,6 +70,7 @@ export class ScoringService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: {
+        members: { select: { userId: true } },
         contributionEvents: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
       },
     });
@@ -126,6 +127,10 @@ export class ScoringService {
       }
       return score;
     };
+
+    for (const member of project.members ?? []) {
+      getUserScore(member.userId);
+    }
 
     // Review caps tracker: PR -> Array of review scores
     const prReviewScores = new Map<string, number>();
