@@ -32,7 +32,7 @@ assignees: ""
 - [x] Reject unsigned webhooks in production and explicit non-dev environments.
 - [x] Preserve webhook delivery durability and replay safety.
 - [x] Enforce project lock immutability for manual sync, webhook handlers, and score writes.
-- [ ] Add model and DTO validation for malformed or race-prone input.
+- [x] Add model and DTO validation for malformed or race-prone input.
 - [x] Remediate backend high/critical dependency advisories or document accepted exceptions.
 
 ## Latest Progress Snapshot
