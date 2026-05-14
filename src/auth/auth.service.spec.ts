@@ -218,6 +218,43 @@ describe('AuthService', () => {
       const result = await service.refreshToken('valid-refresh-token');
       expect(result).toBeNull();
     });
+
+    it('should revoke the replacement chain when a rotated token is reused', async () => {
+      (jwtService.verify as jest.Mock).mockReturnValue({
+        sub: 'user-123',
+        type: 'refresh',
+        jti: 'refresh-id-1',
+      });
+      prismaService.refreshToken.findUnique
+        .mockResolvedValueOnce({
+          id: 'refresh-id-1',
+          userId: 'user-123',
+          tokenHash:
+            'ba518c093e1e0df01cfe01436563cd37f6a1f47697fcc620e818a2d062665083',
+          revokedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+          replacedByTokenId: 'refresh-id-2',
+        })
+        .mockResolvedValueOnce({
+          id: 'refresh-id-2',
+          replacedByTokenId: 'refresh-id-3',
+        })
+        .mockResolvedValueOnce({
+          id: 'refresh-id-3',
+          replacedByTokenId: null,
+        });
+
+      const result = await service.refreshToken('valid-refresh-token');
+
+      expect(result).toBeNull();
+      expect(prismaService.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['refresh-id-2', 'refresh-id-3'] },
+          revokedAt: null,
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
   });
 
   describe('exchangeHandoffCode', () => {

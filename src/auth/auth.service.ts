@@ -153,10 +153,19 @@ export class AuthService {
 
       if (
         !existingToken ||
-        existingToken.tokenHash !== this.hashToken(refreshToken) ||
-        existingToken.revokedAt ||
-        existingToken.expiresAt <= new Date()
+        existingToken.tokenHash !== this.hashToken(refreshToken)
       ) {
+        return null;
+      }
+
+      if (existingToken.revokedAt) {
+        if (existingToken.replacedByTokenId) {
+          await this.revokeRefreshTokenChain(existingToken.replacedByTokenId);
+        }
+        return null;
+      }
+
+      if (existingToken.expiresAt <= new Date()) {
         return null;
       }
 
@@ -243,6 +252,34 @@ export class AuthService {
     } catch {
       return;
     }
+  }
+
+  private async revokeRefreshTokenChain(startTokenId: string): Promise<void> {
+    const tokenIds = new Set<string>();
+    let currentTokenId: string | null = startTokenId;
+
+    for (let depth = 0; currentTokenId && depth < 20; depth += 1) {
+      const token: { id: string; replacedByTokenId: string | null } | null =
+        await this.prisma.refreshToken.findUnique({
+          where: { id: currentTokenId },
+          select: { id: true, replacedByTokenId: true },
+        });
+
+      if (!token || tokenIds.has(token.id)) break;
+
+      tokenIds.add(token.id);
+      currentTokenId = token.replacedByTokenId;
+    }
+
+    if (tokenIds.size === 0) return;
+
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        id: { in: Array.from(tokenIds) },
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
   }
 
   validateToken(token: string): JwtPayload | null {

@@ -104,9 +104,8 @@ export class AuthController {
   }
 
   /**
-   * Logout - invalidate tokens
-   * For stateless JWT, client simply discards tokens
-   * Future: Add token to blocklist for true revocation
+   * Logout - revoke the active refresh token when supplied.
+   * Access tokens remain short-lived; clients should discard them locally.
    */
   @Post('logout')
   @UseGuards(JwtAuthGuard)
