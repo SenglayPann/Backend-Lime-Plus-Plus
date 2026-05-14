@@ -15,6 +15,12 @@ describe('ProjectsService project membership', () => {
       delete: jest.fn(),
       count: jest.fn(),
     },
+    task: { count: jest.fn() },
+    pullRequest: { count: jest.fn() },
+    prReview: { count: jest.fn() },
+    contributionScore: { count: jest.fn() },
+    scoreOverride: { count: jest.fn() },
+    contributionEvent: { count: jest.fn() },
     user: { findUnique: jest.fn(), findFirst: jest.fn() },
     project: { findFirst: jest.fn(), create: jest.fn() },
     auditLog: { create: jest.fn() },
@@ -69,6 +75,13 @@ describe('ProjectsService project membership', () => {
     prisma.project.create.mockResolvedValue({ id: 'project-1' });
     prisma.projectMember.findUnique.mockResolvedValue(null);
     prisma.projectMember.upsert.mockResolvedValue({ id: 'member-1' });
+    prisma.projectMember.delete.mockResolvedValue({ id: 'member-1' });
+    prisma.task.count.mockResolvedValue(0);
+    prisma.pullRequest.count.mockResolvedValue(0);
+    prisma.prReview.count.mockResolvedValue(0);
+    prisma.contributionScore.count.mockResolvedValue(0);
+    prisma.scoreOverride.count.mockResolvedValue(0);
+    prisma.contributionEvent.count.mockResolvedValue(0);
     prisma.auditLog.create.mockResolvedValue({});
   });
 
@@ -213,6 +226,54 @@ describe('ProjectsService project membership', () => {
     await expect(
       service.removeMember('project-1', 'member-1', 'admin', ['ADMIN']),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('allows removing a project member without project evidence', async () => {
+    prisma.projectMember.findFirst.mockResolvedValueOnce({
+      id: 'member-1',
+      projectId: 'project-1',
+      userId: 'student',
+      role: 'PROJECT_MEMBER',
+    });
+
+    await expect(
+      service.removeMember('project-1', 'member-1', 'manager', [
+        'PROJECT_MANAGER',
+      ]),
+    ).resolves.toEqual({ id: 'member-1' });
+
+    expect(prisma.projectMember.delete).toHaveBeenCalledWith({
+      where: { id: 'member-1' },
+    });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'ROLE_CHANGE',
+        actorId: 'manager',
+        projectId: 'project-1',
+        metadata: expect.objectContaining({
+          operation: 'remove_project_member',
+          targetUserId: 'student',
+        }),
+      }),
+    });
+  });
+
+  it('blocks removing a project member with project evidence', async () => {
+    prisma.projectMember.findFirst.mockResolvedValueOnce({
+      id: 'member-1',
+      projectId: 'project-1',
+      userId: 'student',
+      role: 'PROJECT_MEMBER',
+    });
+    prisma.task.count.mockResolvedValueOnce(2);
+
+    await expect(
+      service.removeMember('project-1', 'member-1', 'manager', [
+        'PROJECT_MANAGER',
+      ]),
+    ).rejects.toThrow(ConflictException);
+
+    expect(prisma.projectMember.delete).not.toHaveBeenCalled();
   });
 
   it('blocks project managers from locking projects at service level', async () => {

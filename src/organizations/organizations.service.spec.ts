@@ -1,3 +1,4 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 
 describe('OrganizationsService', () => {
@@ -78,12 +79,44 @@ describe('OrganizationsService', () => {
   });
 
   it('deletes an organization', async () => {
+    prisma.organization.findUnique.mockResolvedValue({
+      id: 'org-1',
+      _count: { departments: 0, userRoles: 0 },
+    });
     prisma.organization.delete.mockResolvedValue({ id: 'org-1' });
 
     await service.remove('org-1');
 
+    expect(prisma.organization.findUnique).toHaveBeenCalledWith({
+      where: { id: 'org-1' },
+      include: {
+        _count: {
+          select: {
+            departments: true,
+            userRoles: true,
+          },
+        },
+      },
+    });
     expect(prisma.organization.delete).toHaveBeenCalledWith({
       where: { id: 'org-1' },
     });
+  });
+
+  it('blocks deleting an organization with dependent data', async () => {
+    prisma.organization.findUnique.mockResolvedValue({
+      id: 'org-1',
+      _count: { departments: 1, userRoles: 0 },
+    });
+
+    await expect(service.remove('org-1')).rejects.toThrow(ConflictException);
+    expect(prisma.organization.delete).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException when deleting a missing organization', async () => {
+    prisma.organization.findUnique.mockResolvedValue(null);
+
+    await expect(service.remove('missing')).rejects.toThrow(NotFoundException);
+    expect(prisma.organization.delete).not.toHaveBeenCalled();
   });
 });

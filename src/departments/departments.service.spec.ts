@@ -1,3 +1,4 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DepartmentsService } from './departments.service';
 
 describe('DepartmentsService', () => {
@@ -73,5 +74,54 @@ describe('DepartmentsService', () => {
         description: undefined,
       },
     });
+  });
+
+  it('deletes an empty department after access check', async () => {
+    prisma.department.findUnique.mockResolvedValue({
+      id: 'dept-1',
+      _count: { projects: 0, userRoles: 0 },
+    });
+    prisma.department.delete.mockResolvedValue({ id: 'dept-1' });
+
+    await service.remove('dept-1', 'actor', ['ORGANIZATION_MANAGER']);
+
+    expect(
+      departmentAccessService.assertCanManageDepartment,
+    ).toHaveBeenCalledWith('actor', ['ORGANIZATION_MANAGER'], 'dept-1');
+    expect(prisma.department.findUnique).toHaveBeenCalledWith({
+      where: { id: 'dept-1' },
+      include: {
+        _count: {
+          select: {
+            projects: true,
+            userRoles: true,
+          },
+        },
+      },
+    });
+    expect(prisma.department.delete).toHaveBeenCalledWith({
+      where: { id: 'dept-1' },
+    });
+  });
+
+  it('blocks deleting a department with dependent data', async () => {
+    prisma.department.findUnique.mockResolvedValue({
+      id: 'dept-1',
+      _count: { projects: 1, userRoles: 0 },
+    });
+
+    await expect(
+      service.remove('dept-1', 'actor', ['ORGANIZATION_MANAGER']),
+    ).rejects.toThrow(ConflictException);
+    expect(prisma.department.delete).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException when deleting a missing department', async () => {
+    prisma.department.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.remove('missing', 'actor', ['ORGANIZATION_MANAGER']),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.department.delete).not.toHaveBeenCalled();
   });
 });

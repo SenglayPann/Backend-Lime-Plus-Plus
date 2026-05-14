@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -62,6 +62,31 @@ export class OrganizationsService {
   }
 
   async remove(id: string) {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            departments: true,
+            userRoles: true,
+          },
+        },
+      },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    if (
+      organization._count.departments > 0 ||
+      organization._count.userRoles > 0
+    ) {
+      throw new ConflictException(
+        'Organization must be empty before it can be deleted',
+      );
+    }
+
     return this.prisma.organization.delete({
       where: { id },
     });

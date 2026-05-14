@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
@@ -93,6 +93,28 @@ export class DepartmentsService {
       actorRoles,
       id,
     );
+
+    const department = await this.prisma.department.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            projects: true,
+            userRoles: true,
+          },
+        },
+      },
+    });
+
+    if (!department) {
+      throw new NotFoundException('Department not found');
+    }
+
+    if (department._count.projects > 0 || department._count.userRoles > 0) {
+      throw new ConflictException(
+        'Department must be empty before it can be deleted',
+      );
+    }
 
     return this.prisma.department.delete({
       where: { id },

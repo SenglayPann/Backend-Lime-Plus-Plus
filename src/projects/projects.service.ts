@@ -343,6 +343,8 @@ export class ProjectsService {
       await this.assertProjectKeepsAnotherManager(id, member.id);
     }
 
+    await this.assertMemberHasNoProjectEvidence(id, member.userId);
+
     const removed = await this.prisma.projectMember.delete({
       where: { id: member.id },
     });
@@ -706,6 +708,48 @@ export class ProjectsService {
     if (managerCount === 0) {
       throw new ConflictException(
         'Project must keep at least one project manager',
+      );
+    }
+  }
+
+  private async assertMemberHasNoProjectEvidence(
+    projectId: string,
+    userId: string,
+  ) {
+    const [
+      assignedTasks,
+      authoredPullRequests,
+      submittedReviews,
+      contributionScores,
+      scoreOverrides,
+      contributionEvents,
+    ] = await Promise.all([
+      this.prisma.task.count({ where: { projectId, assigneeId: userId } }),
+      this.prisma.pullRequest.count({
+        where: { projectId, authorId: userId },
+      }),
+      this.prisma.prReview.count({
+        where: { reviewerId: userId, pullRequest: { projectId } },
+      }),
+      this.prisma.contributionScore.count({ where: { projectId, userId } }),
+      this.prisma.scoreOverride.count({ where: { projectId, userId } }),
+      this.prisma.contributionEvent.count({ where: { projectId, userId } }),
+    ]);
+
+    const blockers = [
+      { label: 'assigned tasks', count: assignedTasks },
+      { label: 'authored pull requests', count: authoredPullRequests },
+      { label: 'submitted reviews', count: submittedReviews },
+      { label: 'contribution scores', count: contributionScores },
+      { label: 'score overrides', count: scoreOverrides },
+      { label: 'contribution events', count: contributionEvents },
+    ]
+      .filter((blocker) => blocker.count > 0)
+      .map((blocker) => `${blocker.count} ${blocker.label}`);
+
+    if (blockers.length > 0) {
+      throw new ConflictException(
+        `Cannot remove project member with existing project evidence: ${blockers.join(', ')}`,
       );
     }
   }
