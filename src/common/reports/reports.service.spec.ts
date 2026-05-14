@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
@@ -288,6 +288,20 @@ describe('ReportsService', () => {
       expect(csv).toContain(`"'=HYPERLINK`);
       expect(csv).toContain(`"'+attacker"`);
       expect(csv).toContain(`" user@example.com"`);
+    });
+
+    it('rejects oversized project CSV exports before summary generation', async () => {
+      mockPrismaService.project.findUnique.mockResolvedValue({
+        members: Array.from({ length: 5001 }, () => ({})),
+        tasks: [],
+        pullRequests: [],
+        contributionScores: [],
+        scoreOverrides: [],
+      });
+
+      await expect(
+        service.exportProjectCsv('p1', 'teacher', ['DEPARTMENT_MANAGER']),
+      ).rejects.toThrow(PayloadTooLargeException);
     });
   });
 

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  PayloadTooLargeException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { Parser } from 'json2csv';
@@ -29,6 +33,9 @@ type ProjectMemberSummary = {
   overrideDelta: number;
   lastScoreUpdated: Date | null;
 };
+
+const MAX_SYNC_PROJECT_EXPORT_RECORDS = 5_000;
+const MAX_SYNC_SCOPE_EXPORT_RECORDS = 10_000;
 
 @Injectable()
 export class ReportsService {
@@ -223,6 +230,7 @@ export class ReportsService {
     });
 
     if (!project) throw new NotFoundException('Project not found');
+    this.assertProjectExportWithinSyncLimit(project, 'Project PDF report');
 
     const memberSummaries = this.buildProjectMemberSummaries(project);
     const projectManagers = project.members
@@ -340,6 +348,7 @@ export class ReportsService {
     });
 
     if (!project) throw new NotFoundException('Project not found');
+    this.assertProjectExportWithinSyncLimit(project, 'Project CSV export');
 
     const data = this.buildProjectMemberSummaries(project).map(
       (member, index) => ({
@@ -400,6 +409,8 @@ export class ReportsService {
       orderBy: { name: 'asc' },
     });
 
+    this.assertScopeExportWithinSyncLimit(projects, 'Organization CSV export');
+
     return this.exportScopeCsv(
       'organization',
       organization.id,
@@ -431,6 +442,8 @@ export class ReportsService {
       include: this.scopeExportProjectInclude(),
       orderBy: { name: 'asc' },
     });
+
+    this.assertScopeExportWithinSyncLimit(projects, 'Department CSV export');
 
     return this.exportScopeCsv(
       'department',
@@ -606,6 +619,54 @@ export class ReportsService {
       },
       scoreOverrides: true,
     } as const;
+  }
+
+  private assertProjectExportWithinSyncLimit(
+    project: ExportSizeProject,
+    label: string,
+  ) {
+    const recordCount = this.countProjectExportRecords(project);
+
+    if (recordCount > MAX_SYNC_PROJECT_EXPORT_RECORDS) {
+      throw new PayloadTooLargeException(
+        [
+          `${label} is too large for synchronous download`,
+          `(${recordCount} records).`,
+          'Narrow the project data or use a background export flow.',
+        ].join(' '),
+      );
+    }
+  }
+
+  private assertScopeExportWithinSyncLimit(
+    projects: ExportSizeProject[],
+    label: string,
+  ) {
+    const recordCount = projects.reduce(
+      (total, project) => total + this.countProjectExportRecords(project),
+      0,
+    );
+
+    if (recordCount > MAX_SYNC_SCOPE_EXPORT_RECORDS) {
+      throw new PayloadTooLargeException(
+        [
+          `${label} is too large for synchronous download`,
+          `(${recordCount} records).`,
+          'Narrow the scope or use a background export flow.',
+        ].join(' '),
+      );
+    }
+  }
+
+  private countProjectExportRecords(project: ExportSizeProject): number {
+    return (
+      (project.members?.length ?? 0) +
+      (project.tasks?.length ?? 0) +
+      (project.pullRequests?.length ?? 0) +
+      (project.contributionScores?.length ?? 0) +
+      (project.scoreOverrides?.length ?? 0) +
+      (project.auditLogs?.length ?? 0)
+    );
   }
 
   private exportScopeCsv(
@@ -895,4 +956,13 @@ type ScopeExportProject = {
     breakdown: unknown;
   }>;
   scoreOverrides: Array<{ userId: string; delta: number }>;
+};
+
+type ExportSizeProject = {
+  members?: unknown[];
+  tasks?: unknown[];
+  pullRequests?: unknown[];
+  contributionScores?: unknown[];
+  scoreOverrides?: unknown[];
+  auditLogs?: unknown[];
 };
