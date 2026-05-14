@@ -1,6 +1,10 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import {
+  expectNoSensitiveFields,
+  safeUserSelect,
+} from '../common/serialization/safe-user-select';
 import { PrismaService } from '../prisma/prisma.service';
 import { TasksService } from './tasks.service';
 
@@ -155,15 +159,31 @@ describe('TasksService', () => {
 
   describe('findOne', () => {
     it('returns a task by id', async () => {
-      const mockTask = { id: 'task-1' };
+      const mockTask = {
+        id: 'task-1',
+        assignee: {
+          id: 'user-1',
+          githubUserId: '101',
+          githubUsername: 'octocat',
+          email: 'octocat@example.com',
+          name: 'Octo Cat',
+          avatarUrl: null,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      };
       mockPrismaService.task.findUnique.mockResolvedValue(mockTask);
 
       const result = await service.findOne('task-1');
 
       expect(result).toEqual(mockTask);
+      expectNoSensitiveFields(result);
       expect(mockPrismaService.task.findUnique).toHaveBeenCalledWith({
         where: { id: 'task-1' },
-        include: { project: true, assignee: true, pullRequests: true },
+        include: {
+          project: true,
+          assignee: { select: safeUserSelect },
+          pullRequests: true,
+        },
       });
     });
 

@@ -98,6 +98,27 @@ describe('WebhooksService', () => {
         createHmac('sha256', webhookSecret).update(original).digest('hex');
       expect(service.verifySignature(tampered, sig)).toBe(false);
     });
+
+    it('should reject unsigned production webhooks when no secret is configured', () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      const serviceWithoutSecret = new WebhooksService(
+        mockPrismaService as any,
+        {
+          get: jest.fn(() => undefined),
+        } as any,
+        mockPrLifecycleHandler as any,
+        mockPrReviewHandler as any,
+        mockTaskSyncHandler as any,
+        mockProjectMetadataHandler as any,
+        mockPushHandler as any,
+      );
+
+      expect(serviceWithoutSecret.verifySignature('payload', '')).toBe(false);
+
+      process.env.NODE_ENV = previousNodeEnv;
+    });
   });
 
   // === §3.2 Idempotency ===
