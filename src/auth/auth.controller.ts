@@ -23,6 +23,10 @@ interface RefreshTokenDto {
   refreshToken: string;
 }
 
+interface ExchangeCodeDto {
+  code: string;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -46,16 +50,33 @@ export class AuthController {
   @Get('github/callback')
   @UseGuards(AuthGuard('github'))
   async githubCallback(@Req() req: RequestWithUser, @Res() res: Response) {
-    const tokens = await this.authService.login(req.user);
+    const code = await this.authService.createHandoffCode(req.user.id);
 
-    // For development, redirect with tokens in query params
-    // In production, you'd set secure HTTP-only cookies or redirect to frontend
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
 
-    res.redirect(
-      `${frontendUrl}/auth/callback?accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}&expiresIn=${tokens.expiresIn}`,
-    );
+    res.redirect(`${frontendUrl}/auth/callback?code=${code}`);
+  }
+
+  /**
+   * Exchange one-time OAuth handoff code for app tokens
+   */
+  @Post('exchange')
+  @HttpCode(HttpStatus.OK)
+  async exchange(
+    @Body() body: ExchangeCodeDto,
+    @Req() req: RequestWithUser,
+  ): Promise<TokenResponse> {
+    const tokens = await this.authService.exchangeHandoffCode(body.code, {
+      userAgent: req.get('user-agent') || undefined,
+      ipAddress: req.ip,
+    });
+
+    if (!tokens) {
+      throw new UnauthorizedException('Invalid or expired auth code');
+    }
+
+    return tokens;
   }
 
   /**
@@ -63,8 +84,14 @@ export class AuthController {
    */
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() body: RefreshTokenDto): Promise<TokenResponse> {
-    const tokens = await this.authService.refreshToken(body.refreshToken);
+  async refresh(
+    @Body() body: RefreshTokenDto,
+    @Req() req: RequestWithUser,
+  ): Promise<TokenResponse> {
+    const tokens = await this.authService.refreshToken(body.refreshToken, {
+      userAgent: req.get('user-agent') || undefined,
+      ipAddress: req.ip,
+    });
 
     if (!tokens) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -81,7 +108,11 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  logout(): { message: string } {
+  async logout(@Body() body: Partial<RefreshTokenDto>): Promise<{ message: string }> {
+    if (body.refreshToken) {
+      await this.authService.revokeRefreshToken(body.refreshToken);
+    }
+
     return { message: 'Logged out successfully' };
   }
 

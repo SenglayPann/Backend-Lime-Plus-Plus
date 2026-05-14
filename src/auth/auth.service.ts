@@ -1,13 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { Role } from '../common/decorators/roles.decorator';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { PrismaService } from '../prisma/prisma.service';
+import { UsersService } from '../users/users.service';
 
 export interface TokenResponse {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
+}
+
+export interface TokenMetadata {
+  userAgent?: string;
+  ipAddress?: string;
 }
 
 export interface UserWithRoles {
@@ -22,17 +30,72 @@ export class AuthService {
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
+    private prisma: PrismaService,
+    private usersService: UsersService,
   ) {}
 
-  async login(user: UserWithRoles): Promise<TokenResponse> {
+  async createHandoffCode(userId: string): Promise<string> {
+    const code = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    await this.prisma.authHandoffCode.create({
+      data: {
+        codeHash: this.hashToken(code),
+        userId,
+        expiresAt,
+      },
+    });
+
+    return code;
+  }
+
+  async exchangeHandoffCode(
+    code: string,
+    metadata: TokenMetadata = {},
+  ): Promise<TokenResponse | null> {
+    const codeHash = this.hashToken(code);
+    const handoffCode = await this.prisma.authHandoffCode.findUnique({
+      where: { codeHash },
+    });
+
+    if (
+      !handoffCode ||
+      handoffCode.usedAt ||
+      handoffCode.expiresAt <= new Date()
+    ) {
+      return null;
+    }
+
+    const claimed = await this.prisma.authHandoffCode.updateMany({
+      where: {
+        codeHash,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: { usedAt: new Date() },
+    });
+
+    if (claimed.count !== 1) {
+      return null;
+    }
+
+    const user = await this.getCurrentUserForTokens(handoffCode.userId);
+    if (!user) {
+      return null;
+    }
+
+    return this.login(user, metadata);
+  }
+
+  async login(
+    user: UserWithRoles,
+    metadata: TokenMetadata = {},
+  ): Promise<TokenResponse> {
     const payload = {
       sub: user.id,
       email: user.email || '',
       roles: user.roles,
     };
-
-    // Satisfy require-await
-    await Promise.resolve();
 
     const accessTokenExpiresIn = this.parseExpiryToSeconds(
       this.configService.get<string>('JWT_EXPIRES_IN') || '15m',
@@ -45,10 +108,24 @@ export class AuthService {
       expiresIn: accessTokenExpiresIn,
     });
 
-    const refreshToken = this.jwtService.sign(
-      { sub: user.id, type: 'refresh' },
-      { expiresIn: refreshTokenExpiresIn },
+    const refreshTokenRecord = this.createRefreshTokenPayload(
+      user.id,
+      refreshTokenExpiresIn,
     );
+    const refreshToken = this.jwtService.sign(refreshTokenRecord.payload, {
+      expiresIn: refreshTokenExpiresIn,
+    });
+
+    await this.prisma.refreshToken.create({
+      data: {
+        id: refreshTokenRecord.id,
+        tokenHash: this.hashToken(refreshToken),
+        userId: user.id,
+        expiresAt: refreshTokenRecord.expiresAt,
+        userAgent: metadata.userAgent,
+        ipAddress: metadata.ipAddress,
+      },
+    });
 
     return {
       accessToken,
@@ -57,21 +134,42 @@ export class AuthService {
     };
   }
 
-  async refreshToken(refreshToken: string): Promise<TokenResponse | null> {
+  async refreshToken(
+    refreshToken: string,
+    metadata: TokenMetadata = {},
+  ): Promise<TokenResponse | null> {
     try {
-      await Promise.resolve(); // Satisfy require-await
-      const payload = this.jwtService.verify<JwtPayload & { type?: string }>(
-        refreshToken,
-      );
+      const payload = this.jwtService.verify<
+        JwtPayload & { type?: string; jti?: string }
+      >(refreshToken);
 
-      if (payload.type !== 'refresh') {
+      if (payload.type !== 'refresh' || !payload.jti) {
+        return null;
+      }
+
+      const existingToken = await this.prisma.refreshToken.findUnique({
+        where: { id: payload.jti },
+      });
+
+      if (
+        !existingToken ||
+        existingToken.tokenHash !== this.hashToken(refreshToken) ||
+        existingToken.revokedAt ||
+        existingToken.expiresAt <= new Date()
+      ) {
+        return null;
+      }
+
+      const user = await this.getCurrentUserForTokens(payload.sub);
+      if (!user) {
+        await this.revokeRefreshToken(refreshToken);
         return null;
       }
 
       const newPayload = {
-        sub: payload.sub,
-        email: payload.email || '',
-        roles: payload.roles || [],
+        sub: user.id,
+        email: user.email || '',
+        roles: user.roles,
       };
 
       const accessTokenExpiresIn = this.parseExpiryToSeconds(
@@ -85,10 +183,34 @@ export class AuthService {
         expiresIn: accessTokenExpiresIn,
       });
 
+      const newRefreshTokenRecord = this.createRefreshTokenPayload(
+        user.id,
+        refreshTokenExpiresIn,
+      );
       const newRefreshToken = this.jwtService.sign(
-        { sub: payload.sub, type: 'refresh' },
+        newRefreshTokenRecord.payload,
         { expiresIn: refreshTokenExpiresIn },
       );
+
+      await this.prisma.$transaction([
+        this.prisma.refreshToken.update({
+          where: { id: existingToken.id },
+          data: {
+            revokedAt: new Date(),
+            replacedByTokenId: newRefreshTokenRecord.id,
+          },
+        }),
+        this.prisma.refreshToken.create({
+          data: {
+            id: newRefreshTokenRecord.id,
+            tokenHash: this.hashToken(newRefreshToken),
+            userId: user.id,
+            expiresAt: newRefreshTokenRecord.expiresAt,
+            userAgent: metadata.userAgent,
+            ipAddress: metadata.ipAddress,
+          },
+        }),
+      ]);
 
       return {
         accessToken,
@@ -97,6 +219,29 @@ export class AuthService {
       };
     } catch {
       return null;
+    }
+  }
+
+  async revokeRefreshToken(refreshToken: string): Promise<void> {
+    try {
+      const payload = this.jwtService.verify<
+        JwtPayload & { type?: string; jti?: string }
+      >(refreshToken);
+
+      if (payload.type !== 'refresh' || !payload.jti) {
+        return;
+      }
+
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          id: payload.jti,
+          tokenHash: this.hashToken(refreshToken),
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+    } catch {
+      return;
     }
   }
 
@@ -127,5 +272,42 @@ export class AuthService {
       default:
         return 900;
     }
+  }
+
+  private async getCurrentUserForTokens(
+    userId: string,
+  ): Promise<UserWithRoles | null> {
+    const user = await this.usersService.findById(userId);
+    if (!user) return null;
+
+    const roles = await this.usersService.getUserRoles(user.id);
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      roles,
+    };
+  }
+
+  private createRefreshTokenPayload(
+    userId: string,
+    expiresInSeconds: number,
+  ) {
+    const id = randomUUID();
+
+    return {
+      id,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
+      payload: {
+        sub: userId,
+        type: 'refresh',
+        jti: id,
+      },
+    };
+  }
+
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 }
