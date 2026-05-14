@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { DepartmentsService } from './departments.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -76,7 +77,7 @@ export class DepartmentsController {
   @ApiOperation({ summary: 'Update a department (Org Manager+)' })
   async update(
     @Param('id') id: string,
-    @Body() updateDepartmentDto: any,
+    @Body() updateDepartmentDto: UpdateDepartmentDto,
     @Request() req: RequestWithUser,
   ) {
     return this.departmentsService.update(

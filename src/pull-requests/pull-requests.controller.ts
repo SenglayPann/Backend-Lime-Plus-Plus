@@ -13,6 +13,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { PullRequestsService } from './pull-requests.service';
+import { ListPullRequestsQueryDto } from './dto/list-pull-requests-query.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -35,16 +36,15 @@ export class PullRequestsController {
   @ApiQuery({ name: 'status', required: false })
   async findAll(
     @Param('projectId') projectId: string,
-    @Query('assignee_id') assigneeId?: string,
-    @Query('status') status?: string,
+    @Query() query: ListPullRequestsQueryDto,
     @Request() req?: RequestWithUser,
   ) {
     return this.prService.findAll(
       req!.user.id,
       req!.user.roles,
       projectId,
-      assigneeId,
-      status,
+      query.assignee_id,
+      query.status,
     );
   }
 

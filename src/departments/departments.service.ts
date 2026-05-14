@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDepartmentDto } from './dto/create-department.dto';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { DepartmentAccessService } from '../common/access/department-access.service';
 import type { Role } from '../common/decorators/roles.decorator';
 
@@ -56,7 +57,12 @@ export class DepartmentsService {
     });
   }
 
-  async update(id: string, dto: any, actorId: string, actorRoles: Role[]) {
+  async update(
+    id: string,
+    dto: UpdateDepartmentDto,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
     await this.departmentAccessService.assertCanManageDepartment(
       actorId,
       actorRoles,

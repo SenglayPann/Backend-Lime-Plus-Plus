@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString } from 'class-validator';
+
+export const LICENSE_PLANS = ['standard', 'academic', 'enterprise', 'trial'] as const;
 
 export class CreateOrganizationDto {
   @ApiProperty({ example: 'Engineering Faculty' })
@@ -12,6 +14,7 @@ export class CreateOrganizationDto {
     description: 'License plan for the organization',
   })
   @IsString()
+  @IsIn(LICENSE_PLANS)
   @IsNotEmpty()
   license_plan: string;
 }

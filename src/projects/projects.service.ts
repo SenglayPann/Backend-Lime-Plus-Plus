@@ -58,18 +58,18 @@ export class ProjectsService {
       actorRoles,
     );
 
+    const evaluationWindow = this.resolveEvaluationWindow(
+      dto.evaluation_window,
+    );
+
     return this.prisma.project.create({
       data: {
         name: dto.name,
         departmentId: dto.department_id,
         repository: dto.repository,
         externalProjectId: dto.github_project_id,
-        evalStart: dto.evaluation_window?.start
-          ? new Date(dto.evaluation_window.start)
-          : null,
-        evalEnd: dto.evaluation_window?.end
-          ? new Date(dto.evaluation_window.end)
-          : null,
+        evalStart: evaluationWindow.evalStart,
+        evalEnd: evaluationWindow.evalEnd,
         members: {
           create: {
             userId: projectManagerId,
@@ -129,6 +129,31 @@ export class ProjectsService {
         'GitHub Project V2 was not found or the token cannot access it',
       );
     }
+  }
+
+  private resolveEvaluationWindow(
+    evaluationWindow: CreateProjectDto['evaluation_window'],
+  ) {
+    const evalStart = evaluationWindow?.start
+      ? new Date(evaluationWindow.start)
+      : null;
+    const evalEnd = evaluationWindow?.end ? new Date(evaluationWindow.end) : null;
+
+    if (evalStart && Number.isNaN(evalStart.getTime())) {
+      throw new BadRequestException('Evaluation window start must be a date');
+    }
+
+    if (evalEnd && Number.isNaN(evalEnd.getTime())) {
+      throw new BadRequestException('Evaluation window end must be a date');
+    }
+
+    if (evalStart && evalEnd && evalStart > evalEnd) {
+      throw new BadRequestException(
+        'Evaluation window start must be before or equal to end',
+      );
+    }
+
+    return { evalStart, evalEnd };
   }
 
   private async assertProjectManagerAssignable(

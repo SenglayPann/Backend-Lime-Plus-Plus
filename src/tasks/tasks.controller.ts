@@ -16,6 +16,7 @@ import {
 } from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
 import { AssignTaskDto } from './dto/assign-task.dto';
+import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -36,17 +37,15 @@ export class TasksController {
   @ApiQuery({ name: 'assignee_id', required: false })
   @ApiQuery({ name: 'status', required: false })
   async findAll(
-    @Query('project_id') projectId?: string,
-    @Query('assignee_id') assigneeId?: string,
-    @Query('status') status?: string,
+    @Query() query: ListTasksQueryDto,
     @Request() req?: RequestWithUser,
   ) {
     return this.tasksService.findAll(
       req!.user.id,
       req!.user.roles,
-      projectId,
-      assigneeId,
-      status,
+      query.project_id,
+      query.assignee_id,
+      query.status,
     );
   }
 

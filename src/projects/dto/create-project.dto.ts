@@ -4,8 +4,22 @@ import {
   IsString,
   IsOptional,
   IsUUID,
-  IsObject,
+  IsDateString,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class EvaluationWindowDto {
+  @ApiProperty({ example: '2026-03-01', required: false })
+  @IsDateString()
+  @IsOptional()
+  start?: string;
+
+  @ApiProperty({ example: '2026-05-30', required: false })
+  @IsDateString()
+  @IsOptional()
+  end?: string;
+}
 
 export class CreateProjectDto {
   @ApiProperty({ example: 'dept_456', description: 'The ID of the department' })
@@ -44,11 +58,10 @@ export class CreateProjectDto {
   @ApiProperty({
     example: { start: '2026-03-01', end: '2026-05-30' },
     description: 'Evaluation window for scoring',
+    type: EvaluationWindowDto,
   })
-  @IsObject()
+  @ValidateNested()
+  @Type(() => EvaluationWindowDto)
   @IsOptional()
-  evaluation_window?: {
-    start: string;
-    end: string;
-  };
+  evaluation_window?: EvaluationWindowDto;
 }
