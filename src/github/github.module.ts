@@ -5,6 +5,7 @@ import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 import { WebhookProcessor } from './webhook.processor';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ProjectAccessModule } from '../common/access/project-access.module';
 import {
   PrLifecycleHandler,
   PrReviewHandler,
@@ -16,6 +17,7 @@ import {
 @Module({
   imports: [
     PrismaModule,
+    ProjectAccessModule,
     BullModule.registerQueue({
       name: 'webhook-events',
       defaultJobOptions: {

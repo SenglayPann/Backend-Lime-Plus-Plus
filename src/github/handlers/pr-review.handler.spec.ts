@@ -16,6 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GitHubPullRequestReviewEventPayload } from '../github-payloads';
+import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 
 describe('PrReviewHandler', () => {
   let handler: PrReviewHandler;
@@ -24,12 +25,15 @@ describe('PrReviewHandler', () => {
     project: { findFirst: jest.fn() },
     pullRequest: { findUnique: jest.fn() },
     user: { findUnique: jest.fn(), create: jest.fn() },
-    prReview: { create: jest.fn() },
-    contributionEvent: { create: jest.fn() },
+    prReview: { create: jest.fn(), upsert: jest.fn() },
+    contributionEvent: { create: jest.fn(), upsert: jest.fn() },
   };
 
   const mockEventEmitter = {
     emit: jest.fn(),
+  };
+  const mockProjectLockGuard = {
+    isLocked: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -38,6 +42,7 @@ describe('PrReviewHandler', () => {
         PrReviewHandler,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
+        { provide: ProjectLockGuardService, useValue: mockProjectLockGuard },
       ],
     }).compile();
 
@@ -47,6 +52,7 @@ describe('PrReviewHandler', () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
+    mockProjectLockGuard.isLocked.mockReturnValue(false);
   });
 
   const validPayload: GitHubPullRequestReviewEventPayload = {
@@ -92,19 +98,22 @@ describe('PrReviewHandler', () => {
     mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1' });
     mockPrismaService.pullRequest.findUnique.mockResolvedValue({ id: 'pr1' });
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u2' });
-    mockPrismaService.prReview.create.mockResolvedValue({ id: 'r1' });
+    mockPrismaService.prReview.upsert.mockResolvedValue({ id: 'r1' });
 
     await handler.handle(validPayload);
 
-    expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(
+    expect(mockPrismaService.prReview.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ state: 'APPROVED' }) as unknown,
+        create: expect.objectContaining({
+          externalReviewId: '123',
+          state: 'APPROVED',
+        }) as unknown,
       }),
     );
 
-    expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledWith(
+    expect(mockPrismaService.contributionEvent.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
+        create: expect.objectContaining({
           type: 'PR_REVIEW_APPROVED',
           referenceId: 'r1',
           score: 3,
@@ -117,7 +126,7 @@ describe('PrReviewHandler', () => {
     mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1' });
     mockPrismaService.pullRequest.findUnique.mockResolvedValue({ id: 'pr1' });
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u2' });
-    mockPrismaService.prReview.create.mockResolvedValue({ id: 'r1' });
+    mockPrismaService.prReview.upsert.mockResolvedValue({ id: 'r1' });
 
     const payload = {
       ...validPayload,
@@ -129,12 +138,12 @@ describe('PrReviewHandler', () => {
 
     await handler.handle(payload);
 
-    expect(mockPrismaService.prReview.create).toHaveBeenCalledWith(
+    expect(mockPrismaService.prReview.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ state: 'COMMENTED' }) as unknown,
+        create: expect.objectContaining({ state: 'COMMENTED' }) as unknown,
       }),
     );
 
-    expect(mockPrismaService.contributionEvent.create).not.toHaveBeenCalled();
+    expect(mockPrismaService.contributionEvent.upsert).not.toHaveBeenCalled();
   });
 });

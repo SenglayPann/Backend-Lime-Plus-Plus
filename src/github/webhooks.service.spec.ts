@@ -32,6 +32,7 @@ describe('WebhooksService', () => {
     webhookDelivery: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      upsert: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -134,6 +135,8 @@ describe('WebhooksService', () => {
       mockPrismaService.webhookDelivery.findUnique.mockResolvedValue({
         id: '1',
         deliveryId: 'abc-123',
+        queuedAt: new Date(),
+        processedAt: null,
       });
       expect(await service.isDuplicate('abc-123')).toBe(true);
       expect(mockPrismaService.webhookDelivery.findUnique).toHaveBeenCalledWith(
@@ -147,6 +150,17 @@ describe('WebhooksService', () => {
       mockPrismaService.webhookDelivery.findUnique.mockResolvedValue(null);
       expect(await service.isDuplicate('new-delivery')).toBe(false);
     });
+
+    it('should return false if delivery exists but was never queued', async () => {
+      mockPrismaService.webhookDelivery.findUnique.mockResolvedValue({
+        id: '1',
+        deliveryId: 'stalled-delivery',
+        queuedAt: null,
+        processedAt: null,
+      });
+
+      expect(await service.isDuplicate('stalled-delivery')).toBe(false);
+    });
   });
 
   describe('storeDelivery', () => {
@@ -157,8 +171,15 @@ describe('WebhooksService', () => {
         payload: { action: 'opened' } as Record<string, unknown>,
       };
       await service.storeDelivery(event);
-      expect(mockPrismaService.webhookDelivery.create).toHaveBeenCalledWith({
-        data: {
+      expect(mockPrismaService.webhookDelivery.upsert).toHaveBeenCalledWith({
+        where: { deliveryId: 'del-456' },
+        update: {
+          eventType: 'pull_request',
+          payload: { action: 'opened' },
+          failedAt: null,
+          lastError: null,
+        },
+        create: {
           deliveryId: 'del-456',
           platform: 'GITHUB',
           eventType: 'pull_request',
@@ -173,7 +194,11 @@ describe('WebhooksService', () => {
       await service.markProcessed('del-456');
       expect(mockPrismaService.webhookDelivery.update).toHaveBeenCalledWith({
         where: { deliveryId: 'del-456' },
-        data: { processedAt: expect.any(Date) as unknown },
+        data: {
+          processedAt: expect.any(Date) as unknown,
+          failedAt: null,
+          lastError: null,
+        },
       });
     });
   });

@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
 import {
   expectNoSensitiveFields,
   safeUserSelect,
@@ -29,6 +30,9 @@ describe('TasksService', () => {
     getManageableProjectIds: jest.fn(),
     assertCanManageProject: jest.fn(),
   };
+  const mockProjectLockGuardService = {
+    assertProjectMutable: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +40,7 @@ describe('TasksService', () => {
         TasksService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ProjectAccessService, useValue: mockProjectAccessService },
+        { provide: ProjectLockGuardService, useValue: mockProjectLockGuardService },
       ],
     }).compile();
 
@@ -211,6 +216,9 @@ describe('TasksService', () => {
         'PROJECT_MANAGER',
       ]);
 
+      expect(
+        mockProjectLockGuardService.assertProjectMutable,
+      ).toHaveBeenCalledWith('proj-1', 'assign tasks');
       expect(
         mockProjectAccessService.assertCanManageProject,
       ).toHaveBeenCalledWith('manager', ['PROJECT_MANAGER'], 'proj-1');

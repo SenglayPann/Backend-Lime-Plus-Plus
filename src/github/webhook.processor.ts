@@ -28,10 +28,12 @@ export class WebhookProcessor extends WorkerHost {
     );
 
     try {
+      await this.webhooksService.markProcessingStarted(deliveryId);
       await this.webhooksService.routeEvent({ event, deliveryId, payload });
       await this.webhooksService.markProcessed(deliveryId);
       this.logger.log(`Webhook ${deliveryId} processed successfully`);
     } catch (error) {
+      await this.webhooksService.markFailed(deliveryId, error);
       this.logger.error(`Failed to process webhook ${deliveryId}`, error);
       throw error; // BullMQ will retry based on queue config
     }

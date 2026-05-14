@@ -23,6 +23,9 @@ describe('ProjectsService project membership', () => {
     assertCanManageProject: jest.fn(),
     assertCanViewProject: jest.fn(),
   };
+  const projectLockGuard = {
+    assertMutable: jest.fn(),
+  };
 
   const service = new ProjectsService(
     prisma as any,
@@ -30,12 +33,14 @@ describe('ProjectsService project membership', () => {
     {} as any,
     {} as any,
     projectAccessService as any,
+    projectLockGuard as any,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
     projectAccessService.assertCanManageProject.mockResolvedValue(undefined);
     projectAccessService.assertCanViewProject.mockResolvedValue(undefined);
+    projectLockGuard.assertMutable.mockReturnValue(undefined);
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
     prisma.projectMember.findUnique.mockResolvedValue(null);
     prisma.projectMember.upsert.mockResolvedValue({ id: 'member-1' });

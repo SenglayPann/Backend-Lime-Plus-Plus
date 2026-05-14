@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, TaskStatus } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
 import { safeUserSelect } from '../common/serialization/safe-user-select';
 import type { Role } from '../common/decorators/roles.decorator';
 
@@ -14,6 +15,7 @@ export class TasksService {
   constructor(
     private prisma: PrismaService,
     private projectAccessService: ProjectAccessService,
+    private projectLockGuard: ProjectLockGuardService,
   ) {}
 
   async findAll(
@@ -128,6 +130,10 @@ export class TasksService {
     actorRoles: Role[],
   ) {
     const task = await this.findOne(id);
+    await this.projectLockGuard.assertProjectMutable(
+      task.projectId,
+      'assign tasks',
+    );
     await this.projectAccessService.assertCanManageProject(
       actorId,
       actorRoles,

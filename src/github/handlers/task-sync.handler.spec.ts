@@ -14,6 +14,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TaskSyncHandler } from './task-sync.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
+import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 
 import { GitHubProjectV2ItemEventPayload } from '../github-payloads';
 
@@ -27,12 +28,16 @@ describe('TaskSyncHandler', () => {
     projectMember: { upsert: jest.fn() },
     auditLog: { create: jest.fn() },
   };
+  const mockProjectLockGuard = {
+    isLocked: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskSyncHandler,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ProjectLockGuardService, useValue: mockProjectLockGuard },
       ],
     }).compile();
 
@@ -42,6 +47,7 @@ describe('TaskSyncHandler', () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
+    mockProjectLockGuard.isLocked.mockReturnValue(false);
   });
 
   const basePayload = {

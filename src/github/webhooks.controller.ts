@@ -92,11 +92,16 @@ export class WebhooksController {
     await this.webhooksService.storeDelivery({ event, deliveryId, payload });
 
     // 7. Enqueue to async job queue (spec §3 pipeline step)
-    await this.webhookQueue.add('process-webhook', {
-      event,
-      deliveryId,
-      payload,
-    });
+    await this.webhookQueue.add(
+      'process-webhook',
+      {
+        event,
+        deliveryId,
+        payload,
+      },
+      { jobId: deliveryId },
+    );
+    await this.webhooksService.markQueued(deliveryId);
 
     this.logger.log(
       `Webhook ${event} (delivery: ${deliveryId}) enqueued for processing`,

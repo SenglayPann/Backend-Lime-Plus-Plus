@@ -20,7 +20,9 @@ describe('WebhookProcessor', () => {
 
   const mockWebhooksService = {
     routeEvent: jest.fn(),
+    markProcessingStarted: jest.fn(),
     markProcessed: jest.fn(),
+    markFailed: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -55,6 +57,9 @@ describe('WebhookProcessor', () => {
       deliveryId: 'del-123',
       payload: { action: 'opened' },
     });
+    expect(mockWebhooksService.markProcessingStarted).toHaveBeenCalledWith(
+      'del-123',
+    );
     expect(mockWebhooksService.markProcessed).toHaveBeenCalledWith('del-123');
   });
 
@@ -71,5 +76,9 @@ describe('WebhookProcessor', () => {
 
     await expect(processor.process(job)).rejects.toThrow('DB error');
     expect(mockWebhooksService.markProcessed).not.toHaveBeenCalled();
+    expect(mockWebhooksService.markFailed).toHaveBeenCalledWith(
+      'del-456',
+      expect.any(Error),
+    );
   });
 });

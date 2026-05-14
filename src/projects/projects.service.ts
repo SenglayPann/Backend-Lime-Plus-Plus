@@ -20,6 +20,7 @@ import {
   Prisma,
 } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
 import { safeUserSelect } from '../common/serialization/safe-user-select';
 import type { Role } from '../common/decorators/roles.decorator';
 
@@ -31,6 +32,7 @@ export class ProjectsService {
     private configService: ConfigService,
     private usersService: UsersService,
     private projectAccessService: ProjectAccessService,
+    private projectLockGuard: ProjectLockGuardService,
   ) {}
 
   async create(
@@ -351,6 +353,8 @@ export class ProjectsService {
     if (!project.externalProjectId) {
       throw new ConflictException('Project is not linked to a GitHub Project');
     }
+
+    this.projectLockGuard.assertMutable(project, 'sync tasks');
 
     const resolvedAccessToken =
       accessToken ||

@@ -17,6 +17,7 @@ import { GitHubService } from '../github.service';
 import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GitHubPullRequestEventPayload } from '../github-payloads';
+import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 
 describe('PrLifecycleHandler', () => {
   let handler: PrLifecycleHandler;
@@ -33,7 +34,7 @@ describe('PrLifecycleHandler', () => {
       findFirst: jest.fn(),
     },
     auditLog: { create: jest.fn() },
-    contributionEvent: { create: jest.fn() },
+    contributionEvent: { create: jest.fn(), upsert: jest.fn() },
   };
 
   const mockEventEmitter = {
@@ -44,6 +45,9 @@ describe('PrLifecycleHandler', () => {
     getAppInstallationToken: jest.fn(),
     createCommitStatus: jest.fn(),
   };
+  const mockProjectLockGuard = {
+    isLocked: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -52,6 +56,7 @@ describe('PrLifecycleHandler', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: GitHubService, useValue: mockGitHubService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
+        { provide: ProjectLockGuardService, useValue: mockProjectLockGuard },
       ],
     }).compile();
 
@@ -62,6 +67,9 @@ describe('PrLifecycleHandler', () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    mockProjectLockGuard.isLocked.mockImplementation(
+      (project: { status: string }) => project.status === 'LOCKED',
+    );
   });
 
   it('should parse task ID correctly', () => {
@@ -210,12 +218,12 @@ describe('PrLifecycleHandler', () => {
 
       await handler.handle(mergedPayload);
 
-      expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledTimes(
+      expect(mockPrismaService.contributionEvent.upsert).toHaveBeenCalledTimes(
         1,
       );
-      expect(mockPrismaService.contributionEvent.create).toHaveBeenCalledWith(
+      expect(mockPrismaService.contributionEvent.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
+          create: expect.objectContaining({
             type: 'TASK_COMPLETED',
             referenceId: 't1',
             score: 10,
@@ -244,7 +252,7 @@ describe('PrLifecycleHandler', () => {
 
       await handler.handle(mergedPayload);
 
-      expect(mockPrismaService.contributionEvent.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.contributionEvent.upsert).not.toHaveBeenCalled();
     });
   });
 });

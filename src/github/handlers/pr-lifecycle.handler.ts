@@ -4,6 +4,7 @@ import { GitHubService } from '../github.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Project, Task, PullRequest } from '../../generated/prisma';
 import { safeUserSelect } from '../../common/serialization/safe-user-select';
+import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 import {
   GitHubPullRequestEventPayload,
   GitHubPullRequestPayload,
@@ -35,6 +36,7 @@ export class PrLifecycleHandler {
     private prisma: PrismaService,
     private githubService: GitHubService,
     private eventEmitter: EventEmitter2,
+    private projectLockGuard: ProjectLockGuardService,
   ) {}
 
   /**
@@ -60,6 +62,13 @@ export class PrLifecycleHandler {
     if (!project) {
       this.logger.warn(
         `No project found for repository ${repository.full_name}`,
+      );
+      return;
+    }
+
+    if (this.projectLockGuard.isLocked(project)) {
+      this.logger.warn(
+        `Ignoring pull_request ${action} for locked project ${project.id}`,
       );
       return;
     }
@@ -93,14 +102,6 @@ export class PrLifecycleHandler {
     installation: GitHubInstallationPayload | undefined,
     repository: GitHubRepositoryPayload,
   ): Promise<void> {
-    // Strict mode: reject new PRs on locked projects
-    if (project.status === 'LOCKED' && action === 'opened') {
-      this.logger.warn(
-        `REJECT: PR #${pr.number} opened on locked project ${project.id}`,
-      );
-      return;
-    }
-
     // Parse task ID from title/body
     const taskId = this.parseTaskId(pr.title, pr.body);
 
@@ -400,14 +401,23 @@ export class PrLifecycleHandler {
     }
 
     // Emit TASK_COMPLETED contribution event (base score: 10)
-    await this.prisma.contributionEvent.create({
-      data: {
+    await this.prisma.contributionEvent.upsert({
+      where: {
+        projectId_userId_type_referenceId: {
+          projectId: project.id,
+          userId: authorId,
+          type: 'TASK_COMPLETED',
+          referenceId: task.id,
+        },
+      },
+      create: {
         projectId: project.id,
         userId: authorId,
         type: 'TASK_COMPLETED',
         referenceId: task.id,
         score: 10,
       },
+      update: { score: 10 },
     });
 
     this.logger.log(

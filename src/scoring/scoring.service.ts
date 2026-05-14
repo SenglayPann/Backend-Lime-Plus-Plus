@@ -1,14 +1,9 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { Project, Task, ContributionEvent } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
 import type { Role } from '../common/decorators/roles.decorator';
 
 export interface ScoringConfig {
@@ -68,6 +63,7 @@ export class ScoringService {
   constructor(
     private prisma: PrismaService,
     private projectAccessService: ProjectAccessService,
+    private projectLockGuard: ProjectLockGuardService,
   ) {}
 
   async calculateProjectScores(projectId: string): Promise<void> {
@@ -370,6 +366,7 @@ export class ScoringService {
     actorRoles: Role[],
   ): Promise<void> {
     await this.assertCanApplyScoreOverride(projectId, actorId, actorRoles);
+    await this.projectLockGuard.assertProjectMutable(projectId, 'override scores');
 
     const membership = await this.prisma.projectMember.findFirst({
       where: {
@@ -384,14 +381,6 @@ export class ScoringService {
         'Score overrides can only be applied to project members',
       );
     }
-
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-    });
-    if (!project) throw new NotFoundException('Project not found');
-    if (project.status === 'LOCKED')
-      throw new ConflictException('Cannot override score in a locked project');
-
     await this.prisma.scoreOverride.create({
       data: {
         projectId,

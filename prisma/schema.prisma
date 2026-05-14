@@ -211,6 +211,7 @@ model PullRequest {
 model PrReview {
   id            String      @id @default(uuid())
   pullRequestId String      @map("pull_request_id")
+  externalReviewId String?  @map("external_review_id")
   reviewerId    String      @map("reviewer_id")
   state         ReviewState
   body          String?
@@ -218,6 +219,7 @@ model PrReview {
   pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
   reviewer      User        @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
 
+  @@unique([pullRequestId, externalReviewId])
   @@map("pr_reviews")
 }
 
@@ -232,6 +234,7 @@ model ContributionEvent {
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
+  @@unique([projectId, userId, type, referenceId])
   @@map("contribution_events")
 }
 
@@ -283,7 +286,11 @@ model WebhookDelivery {
   deliveryId  String    @unique @map("delivery_id")
   eventType   String    @map("event_type")
   payload     Json
+  queuedAt    DateTime? @map("queued_at")
+  processingStartedAt DateTime? @map("processing_started_at")
   processedAt DateTime? @map("processed_at")
+  failedAt    DateTime? @map("failed_at")
+  lastError   String?   @map("last_error") @db.Text
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("webhook_deliveries")

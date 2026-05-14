@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GitHubPullRequestReviewEventPayload } from '../github-payloads';
+import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 
 /**
  * PR Review Handler (spec §7)
@@ -24,6 +25,7 @@ export class PrReviewHandler {
   constructor(
     private prisma: PrismaService,
     private eventEmitter: EventEmitter2,
+    private projectLockGuard: ProjectLockGuardService,
   ) {}
 
   /**
@@ -69,6 +71,13 @@ export class PrReviewHandler {
       return;
     }
 
+    if (this.projectLockGuard.isLocked(project)) {
+      this.logger.warn(
+        `Ignoring pull_request_review ${action} for locked project ${project.id}`,
+      );
+      return;
+    }
+
     // Find the PR in our DB
     const existingPr = await this.prisma.pullRequest.findUnique({
       where: {
@@ -97,9 +106,22 @@ export class PrReviewHandler {
     const reviewState = this.mapReviewState(review.state);
 
     // Persist review record
-    const savedReview = await this.prisma.prReview.create({
-      data: {
+    const externalReviewId = String(review.id);
+    const savedReview = await this.prisma.prReview.upsert({
+      where: {
+        pullRequestId_externalReviewId: {
+          pullRequestId: existingPr.id,
+          externalReviewId,
+        },
+      },
+      create: {
         pullRequestId: existingPr.id,
+        externalReviewId,
+        reviewerId: reviewer.id,
+        state: reviewState,
+        body: review.body ?? null,
+      },
+      update: {
         reviewerId: reviewer.id,
         state: reviewState,
         body: review.body ?? null,
@@ -112,14 +134,23 @@ export class PrReviewHandler {
 
     // Emit contribution event only for APPROVED reviews
     if (reviewState === 'APPROVED') {
-      await this.prisma.contributionEvent.create({
-        data: {
+      await this.prisma.contributionEvent.upsert({
+        where: {
+          projectId_userId_type_referenceId: {
+            projectId: project.id,
+            userId: reviewer.id,
+            type: 'PR_REVIEW_APPROVED',
+            referenceId: savedReview.id,
+          },
+        },
+        create: {
           projectId: project.id,
           userId: reviewer.id,
           type: 'PR_REVIEW_APPROVED',
           referenceId: savedReview.id,
           score: 3,
         },
+        update: { score: 3 },
       });
 
       this.logger.log(

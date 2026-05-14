@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Project } from '../../generated/prisma';
 import { safeUserSelect } from '../../common/serialization/safe-user-select';
+import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 import {
   GitHubProjectV2ItemEventPayload,
   GitHubProjectV2ItemPayload,
@@ -26,7 +27,10 @@ import {
 export class TaskSyncHandler {
   private readonly logger = new Logger(TaskSyncHandler.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private projectLockGuard: ProjectLockGuardService,
+  ) {}
 
   /**
    * Main entry point for projects_v2_item webhook events
@@ -54,6 +58,13 @@ export class TaskSyncHandler {
     if (!project) {
       this.logger.warn(
         `No project found for GitHub Project node ${projectNodeId}`,
+      );
+      return;
+    }
+
+    if (this.projectLockGuard.isLocked(project)) {
+      this.logger.warn(
+        `Ignoring projects_v2_item ${action} for locked project ${project.id}`,
       );
       return;
     }

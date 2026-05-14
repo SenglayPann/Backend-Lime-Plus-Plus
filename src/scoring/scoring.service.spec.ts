@@ -3,6 +3,7 @@ import { ScoringService } from './scoring.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 import { ProjectAccessService } from '../common/access/project-access.service';
+import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
 
 describe('ScoringService', () => {
   let service: ScoringService;
@@ -21,6 +22,9 @@ describe('ScoringService', () => {
     assertCanManageProject: jest.fn(),
     assertCanViewProject: jest.fn(),
   };
+  const mockProjectLockGuardService = {
+    assertProjectMutable: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -28,6 +32,7 @@ describe('ScoringService', () => {
         ScoringService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ProjectAccessService, useValue: mockProjectAccessService },
+        { provide: ProjectLockGuardService, useValue: mockProjectLockGuardService },
       ],
     }).compile();
 
@@ -36,6 +41,7 @@ describe('ScoringService', () => {
 
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    mockProjectLockGuardService.assertProjectMutable.mockResolvedValue(undefined);
   });
 
   describe('calculateProjectScores', () => {
@@ -267,6 +273,9 @@ describe('ScoringService', () => {
 
       await service.applyOverride('p1', 'u1', 50, 'Bonus', 'admin1', ['ADMIN']);
 
+      expect(
+        mockProjectLockGuardService.assertProjectMutable,
+      ).toHaveBeenCalledWith('p1', 'override scores');
       expect(mockPrismaService.scoreOverride.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({

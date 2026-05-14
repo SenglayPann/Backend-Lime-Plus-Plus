@@ -53,10 +53,20 @@ export class WebhooksService {
     const secret = this.configService.get<string>('GITHUB_WEBHOOK_SECRET');
 
     if (!secret) {
-      this.logger.warn(
-        'GITHUB_WEBHOOK_SECRET not configured, skipping verification',
-      );
-      return true; // Allow in dev if no secret configured
+      const nodeEnv =
+        this.configService.get<string>('NODE_ENV') || process.env.NODE_ENV;
+      const allowUnsigned =
+        this.configService.get<string>('ALLOW_UNSIGNED_WEBHOOKS') === 'true';
+
+      if (nodeEnv === 'development' && allowUnsigned) {
+        this.logger.warn(
+          'GITHUB_WEBHOOK_SECRET not configured; accepting unsigned webhook because ALLOW_UNSIGNED_WEBHOOKS=true in development',
+        );
+        return true;
+      }
+
+      this.logger.error('GITHUB_WEBHOOK_SECRET is required for webhooks');
+      return false;
     }
 
     if (!signature) {
@@ -83,15 +93,23 @@ export class WebhooksService {
     const existing = await this.prisma.webhookDelivery.findUnique({
       where: { deliveryId },
     });
-    return existing !== null;
+    return Boolean(existing?.queuedAt || existing?.processedAt);
   }
 
   /**
    * Store a webhook delivery for idempotency tracking (spec §3 pipeline)
    */
   async storeDelivery(event: WebhookEvent): Promise<void> {
-    await this.prisma.webhookDelivery.create({
-      data: {
+    await this.prisma.webhookDelivery.upsert({
+      where: { deliveryId: event.deliveryId },
+      update: {
+        eventType: event.event,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        payload: event.payload as any,
+        failedAt: null,
+        lastError: null,
+      },
+      create: {
         deliveryId: event.deliveryId,
         platform: 'GITHUB',
         eventType: event.event,
@@ -101,13 +119,40 @@ export class WebhooksService {
     });
   }
 
+  async markQueued(deliveryId: string): Promise<void> {
+    await this.prisma.webhookDelivery.update({
+      where: { deliveryId },
+      data: { queuedAt: new Date(), failedAt: null, lastError: null },
+    });
+  }
+
+  async markProcessingStarted(deliveryId: string): Promise<void> {
+    await this.prisma.webhookDelivery.update({
+      where: { deliveryId },
+      data: { processingStartedAt: new Date(), failedAt: null, lastError: null },
+    });
+  }
+
   /**
    * Mark a webhook delivery as processed
    */
   async markProcessed(deliveryId: string): Promise<void> {
     await this.prisma.webhookDelivery.update({
       where: { deliveryId },
-      data: { processedAt: new Date() },
+      data: { processedAt: new Date(), failedAt: null, lastError: null },
+    });
+  }
+
+  async markFailed(deliveryId: string, error: unknown): Promise<void> {
+    const message =
+      error instanceof Error ? error.message : 'Unknown webhook processing error';
+
+    await this.prisma.webhookDelivery.update({
+      where: { deliveryId },
+      data: {
+        failedAt: new Date(),
+        lastError: message,
+      },
     });
   }
 
