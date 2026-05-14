@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, TaskStatus } from '../generated/prisma';
+import { AuditAction, Prisma, TaskStatus } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
 import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
 import { safeUserSelect } from '../common/serialization/safe-user-select';
@@ -152,9 +152,29 @@ export class TasksService {
       throw new BadRequestException('Assignee must be a member of the project');
     }
 
-    return this.prisma.task.update({
+    const updatedTask = await this.prisma.task.update({
       where: { id },
       data: { assigneeId },
     });
+
+    if (task.assigneeId !== assigneeId) {
+      await this.prisma.auditLog.create({
+        data: {
+          action: AuditAction.TASK_REASSIGN,
+          actorId,
+          projectId: task.projectId,
+          metadata: {
+            type: 'MANUAL_TASK_REASSIGN',
+            taskId: task.externalTaskId ?? task.id,
+            previousAssigneeId: task.assigneeId,
+            newAssigneeId: assigneeId,
+            hasOpenPRs:
+              task.pullRequests?.some((pr) => pr.status === 'OPEN') ?? false,
+          },
+        },
+      });
+    }
+
+    return updatedTask;
   }
 }

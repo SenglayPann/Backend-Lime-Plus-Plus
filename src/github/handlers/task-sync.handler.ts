@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Project } from '../../generated/prisma';
+import { AuditAction, Project } from '../../generated/prisma';
 import { safeUserSelect } from '../../common/serialization/safe-user-select';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 import {
@@ -90,7 +90,7 @@ export class TaskSyncHandler {
         );
         break;
       case 'deleted':
-        await this.handleDeleted(project, projects_v2_item);
+        await this.handleDeleted(project, projects_v2_item, sender);
         break;
       default:
         this.logger.debug(`Ignoring projects_v2_item action: ${action}`);
@@ -203,6 +203,25 @@ export class TaskSyncHandler {
           where: { id: task.id },
           data: { status: newStatus },
         });
+        const actor = await this.findOrCreateUser(
+          String(sender.id),
+          sender.login,
+          sender.avatar_url,
+        );
+        await this.prisma.auditLog.create({
+          data: {
+            action: AuditAction.TASK_REASSIGN,
+            actorId: actor.id,
+            projectId: project.id,
+            metadata: {
+              type: 'TASK_STATUS_CHANGE',
+              taskId: externalTaskId,
+              previousStatus: task.status,
+              newStatus,
+              source: 'GITHUB_PROJECT',
+            },
+          },
+        });
         if (
           newStatus === 'DONE' &&
           !task.pullRequests.some((pr) => pr.status === 'MERGED')
@@ -234,7 +253,7 @@ export class TaskSyncHandler {
         // Log to audit_logs (spec §8 strict rules)
         await this.prisma.auditLog.create({
           data: {
-            action: 'TASK_REASSIGN',
+            action: AuditAction.TASK_REASSIGN,
             actorId: actor.id,
             projectId: project.id,
             metadata: {
@@ -266,6 +285,7 @@ export class TaskSyncHandler {
   private async handleDeleted(
     project: Project,
     item: GitHubProjectV2ItemPayload,
+    sender: GitHubUserPayload,
   ): Promise<void> {
     const externalTaskId = this.generateTaskId(item);
 
@@ -289,6 +309,26 @@ export class TaskSyncHandler {
     await this.prisma.task.update({
       where: { id: task.id },
       data: { status: 'BLOCKED' },
+    });
+
+    const actor = await this.findOrCreateUser(
+      String(sender.id),
+      sender.login,
+      sender.avatar_url,
+    );
+    await this.prisma.auditLog.create({
+      data: {
+        action: AuditAction.TASK_REASSIGN,
+        actorId: actor.id,
+        projectId: project.id,
+        metadata: {
+          type: 'TASK_SOFT_DELETE',
+          taskId: externalTaskId,
+          previousStatus: task.status,
+          newStatus: 'BLOCKED',
+          source: 'GITHUB_PROJECT_ITEM_DELETED',
+        },
+      },
     });
 
     this.logger.warn(

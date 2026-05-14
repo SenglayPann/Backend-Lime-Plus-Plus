@@ -490,6 +490,14 @@ export class ReportsService {
   }
 
   private formatTaskAuditMetadata(data: Record<string, unknown>): string {
+    if (data.type === 'TASK_STATUS_CHANGE') {
+      return `Task ${this.safeAuditValue(data.taskId)} status changed from ${this.safeAuditValue(data.previousStatus)} to ${this.safeAuditValue(data.newStatus)}`;
+    }
+
+    if (data.type === 'TASK_SOFT_DELETE') {
+      return `Task ${this.safeAuditValue(data.taskId)} blocked after GitHub item deletion`;
+    }
+
     if (data.type === 'PR_ASSIGNEE_MISMATCH') {
       return [
         `PR #${this.safeAuditValue(data.prNumber)}`,

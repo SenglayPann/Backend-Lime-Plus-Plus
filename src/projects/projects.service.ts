@@ -492,7 +492,7 @@ export class ProjectsService {
               externalTaskId,
             },
           },
-          select: { id: true },
+          select: { id: true, assigneeId: true, status: true },
         });
 
         await this.prisma.task.upsert({
@@ -518,6 +518,47 @@ export class ProjectsService {
 
         if (existingTask) {
           summary.tasksUpdated += 1;
+          const auditWrites: Array<Promise<unknown>> = [];
+
+          if (existingTask.status !== taskStatus) {
+            auditWrites.push(
+              this.prisma.auditLog.create({
+                data: {
+                  action: AuditAction.TASK_REASSIGN,
+                  actorId,
+                  projectId: id,
+                  metadata: {
+                    type: 'TASK_STATUS_CHANGE',
+                    taskId: externalTaskId,
+                    previousStatus: existingTask.status,
+                    newStatus: taskStatus,
+                    source: 'KANBAN_SYNC',
+                  },
+                },
+              }),
+            );
+          }
+
+          if (existingTask.assigneeId !== assignee.id) {
+            auditWrites.push(
+              this.prisma.auditLog.create({
+                data: {
+                  action: AuditAction.TASK_REASSIGN,
+                  actorId,
+                  projectId: id,
+                  metadata: {
+                    type: 'TASK_ASSIGNEE_CHANGE',
+                    taskId: externalTaskId,
+                    previousAssigneeId: existingTask.assigneeId,
+                    newAssigneeId: assignee.id,
+                    source: 'KANBAN_SYNC',
+                  },
+                },
+              }),
+            );
+          }
+
+          await Promise.all(auditWrites);
         } else {
           summary.tasksCreated += 1;
         }

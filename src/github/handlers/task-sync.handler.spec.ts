@@ -48,6 +48,7 @@ describe('TaskSyncHandler', () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
     mockProjectLockGuard.isLocked.mockReturnValue(false);
+    mockPrismaService.user.findUnique.mockResolvedValue({ id: 'sender-user' });
   });
 
   const basePayload = {
@@ -109,6 +110,20 @@ describe('TaskSyncHandler', () => {
       where: { id: 't1' },
       data: { status: 'DONE' },
     });
+    expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'TASK_REASSIGN',
+          actorId: 'sender-user',
+          metadata: expect.objectContaining({
+            type: 'TASK_STATUS_CHANGE',
+            taskId: 'TASK-cn1',
+            previousStatus: 'TODO',
+            newStatus: 'DONE',
+          }) as unknown,
+        }) as unknown,
+      }),
+    );
   });
 
   it('should flag and audit task reassignment', async () => {
@@ -158,5 +173,19 @@ describe('TaskSyncHandler', () => {
       where: { id: 't1' },
       data: { status: 'BLOCKED' }, // Soft delete
     });
+    expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'TASK_REASSIGN',
+          actorId: 'sender-user',
+          metadata: expect.objectContaining({
+            type: 'TASK_SOFT_DELETE',
+            taskId: 'TASK-cn1',
+            previousStatus: undefined,
+            newStatus: 'BLOCKED',
+          }) as unknown,
+        }) as unknown,
+      }),
+    );
   });
 });

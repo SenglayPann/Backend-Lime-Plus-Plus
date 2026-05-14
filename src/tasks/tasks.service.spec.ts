@@ -21,6 +21,9 @@ describe('TasksService', () => {
     projectMember: {
       findFirst: jest.fn(),
     },
+    auditLog: {
+      create: jest.fn(),
+    },
   };
 
   const mockProjectAccessService = {
@@ -203,7 +206,13 @@ describe('TasksService', () => {
 
   describe('assignTask', () => {
     it('assigns a task to an existing project member', async () => {
-      const mockTask = { id: 'task-1', projectId: 'proj-1' };
+      const mockTask = {
+        id: 'task-1',
+        externalTaskId: 'TASK-1',
+        projectId: 'proj-1',
+        assigneeId: 'old-user',
+        pullRequests: [],
+      };
       const updatedTask = { ...mockTask, assigneeId: 'new-user' };
 
       jest.spyOn(service, 'findOne').mockResolvedValue(mockTask as any);
@@ -232,6 +241,19 @@ describe('TasksService', () => {
       expect(mockPrismaService.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
         data: { assigneeId: 'new-user' },
+      });
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'TASK_REASSIGN',
+          actorId: 'manager',
+          projectId: 'proj-1',
+          metadata: expect.objectContaining({
+            type: 'MANUAL_TASK_REASSIGN',
+            taskId: 'TASK-1',
+            previousAssigneeId: 'old-user',
+            newAssigneeId: 'new-user',
+          }),
+        }),
       });
       expect(result).toEqual(updatedTask);
     });
