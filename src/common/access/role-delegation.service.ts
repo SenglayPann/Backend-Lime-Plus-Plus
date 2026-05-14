@@ -21,6 +21,14 @@ const ROLE_RANK: Record<Role, number> = {
 export class RoleDelegationService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async assertTargetCanBeManaged(
+    actorId: string,
+    actorRoles: Role[],
+    targetUserId: string,
+  ) {
+    await this.assertTargetIsNotProtected(actorId, actorRoles, targetUserId);
+  }
+
   async assignUserRole(
     actorId: string,
     actorRoles: Role[],

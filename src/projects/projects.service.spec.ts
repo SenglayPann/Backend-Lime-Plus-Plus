@@ -15,36 +15,128 @@ describe('ProjectsService project membership', () => {
       delete: jest.fn(),
       count: jest.fn(),
     },
-    user: { findUnique: jest.fn() },
-    project: { findFirst: jest.fn() },
+    user: { findUnique: jest.fn(), findFirst: jest.fn() },
+    project: { findFirst: jest.fn(), create: jest.fn() },
     auditLog: { create: jest.fn() },
   };
+  const githubService = {
+    repositoryExists: jest.fn(),
+    projectV2Exists: jest.fn(),
+  };
+  const configService = { get: jest.fn() };
+  const usersService = { getGitHubAccessToken: jest.fn() };
   const projectAccessService = {
     assertCanManageProject: jest.fn(),
     assertCanViewProject: jest.fn(),
+    assertCanCreateProjectInDepartment: jest.fn(),
   };
   const projectLockGuard = {
     assertMutable: jest.fn(),
   };
+  const roleDelegationService = {
+    assertTargetCanBeManaged: jest.fn(),
+  };
+  const userVisibilityService = {
+    buildVisibleUserWhere: jest.fn(),
+  };
 
   const service = new ProjectsService(
     prisma as any,
-    {} as any,
-    {} as any,
-    {} as any,
+    githubService as any,
+    configService as any,
+    usersService as any,
     projectAccessService as any,
     projectLockGuard as any,
+    roleDelegationService as any,
+    userVisibilityService as any,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
     projectAccessService.assertCanManageProject.mockResolvedValue(undefined);
     projectAccessService.assertCanViewProject.mockResolvedValue(undefined);
+    projectAccessService.assertCanCreateProjectInDepartment.mockResolvedValue(
+      undefined,
+    );
     projectLockGuard.assertMutable.mockReturnValue(undefined);
+    roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
+    userVisibilityService.buildVisibleUserWhere.mockReturnValue({});
+    githubService.repositoryExists.mockResolvedValue(true);
+    githubService.projectV2Exists.mockResolvedValue(true);
+    usersService.getGitHubAccessToken.mockResolvedValue(null);
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    prisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
+    prisma.project.create.mockResolvedValue({ id: 'project-1' });
     prisma.projectMember.findUnique.mockResolvedValue(null);
     prisma.projectMember.upsert.mockResolvedValue({ id: 'member-1' });
     prisma.auditLog.create.mockResolvedValue({});
+  });
+
+  describe('create', () => {
+    const dto = {
+      department_id: 'dept-1',
+      name: 'Capstone',
+      repository: 'owner/repo',
+      github_project_id: 'PVT_1',
+    };
+
+    it('defaults the creator to project manager when no explicit manager is supplied', async () => {
+      await service.create(dto, 'creator', ['DEPARTMENT_MANAGER'], 'gh-token');
+
+      expect(prisma.project.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            members: {
+              create: expect.objectContaining({
+                userId: 'creator',
+                role: 'PROJECT_MANAGER',
+              }),
+            },
+          }) as unknown,
+        }),
+      );
+      expect(
+        roleDelegationService.assertTargetCanBeManaged,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('blocks assigning a protected target as project manager', async () => {
+      roleDelegationService.assertTargetCanBeManaged.mockRejectedValueOnce(
+        new ForbiddenException('protected target'),
+      );
+
+      await expect(
+        service.create(
+          { ...dto, project_manager_id: 'admin-user' },
+          'teacher',
+          ['DEPARTMENT_MANAGER'],
+          'gh-token',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.project.create).not.toHaveBeenCalled();
+    });
+
+    it('blocks project manager candidates outside actor visibility scope', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.create(
+          { ...dto, project_manager_id: 'outside-user' },
+          'teacher',
+          ['DEPARTMENT_MANAGER'],
+          'gh-token',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          AND: [{ id: 'outside-user' }, {}],
+        },
+        select: { id: true },
+      });
+      expect(prisma.project.create).not.toHaveBeenCalled();
+    });
   });
 
   it('allows project managers to add project members', async () => {

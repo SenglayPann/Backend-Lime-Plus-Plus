@@ -21,6 +21,8 @@ import {
 } from '../generated/prisma';
 import { ProjectAccessService } from '../common/access/project-access.service';
 import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
+import { RoleDelegationService } from '../common/access/role-delegation.service';
+import { UserVisibilityService } from '../common/access/user-visibility.service';
 import { safeUserSelect } from '../common/serialization/safe-user-select';
 import type { Role } from '../common/decorators/roles.decorator';
 
@@ -33,6 +35,8 @@ export class ProjectsService {
     private usersService: UsersService,
     private projectAccessService: ProjectAccessService,
     private projectLockGuard: ProjectLockGuardService,
+    private roleDelegationService: RoleDelegationService,
+    private userVisibilityService: UserVisibilityService,
   ) {}
 
   async create(
@@ -48,7 +52,11 @@ export class ProjectsService {
     );
     await this.validateGitHubResources(dto, actorId, githubToken);
     const projectManagerId = dto.project_manager_id ?? actorId;
-    await this.assertProjectManagerExists(projectManagerId);
+    await this.assertProjectManagerAssignable(
+      projectManagerId,
+      actorId,
+      actorRoles,
+    );
 
     return this.prisma.project.create({
       data: {
@@ -123,7 +131,11 @@ export class ProjectsService {
     }
   }
 
-  private async assertProjectManagerExists(userId: string) {
+  private async assertProjectManagerAssignable(
+    userId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -131,6 +143,32 @@ export class ProjectsService {
 
     if (!user) {
       throw new BadRequestException('Selected project manager does not exist');
+    }
+
+    if (userId === actorId || actorRoles.includes('ADMIN')) {
+      return;
+    }
+
+    await this.roleDelegationService.assertTargetCanBeManaged(
+      actorId,
+      actorRoles,
+      userId,
+    );
+
+    const visibleUser = await this.prisma.user.findFirst({
+      where: {
+        AND: [
+          { id: userId },
+          this.userVisibilityService.buildVisibleUserWhere(actorId, actorRoles),
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!visibleUser) {
+      throw new ForbiddenException(
+        'Selected project manager is outside your manageable scope',
+      );
     }
   }
 
