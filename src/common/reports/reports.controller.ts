@@ -9,6 +9,7 @@ import {
   StreamableFile,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
 import { Roles } from '../decorators/roles.decorator';
@@ -26,6 +27,7 @@ class ReportDto {
 @ApiTags('Reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
+@Throttle({ default: { limit: 10, ttl: 60_000 } })
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}

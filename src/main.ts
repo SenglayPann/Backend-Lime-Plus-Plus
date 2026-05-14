@@ -2,19 +2,65 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { json, urlencoded, type Request, type Response } from 'express';
 import { AppModule } from './app.module';
 import { TransformInterceptor } from './common/interceptors';
 import { HttpExceptionFilter } from './common/filters';
 
+type RequestWithRawBody = Request & { rawBody?: Buffer };
+
+function captureRawBody(req: RequestWithRawBody, _res: Response, buf: Buffer) {
+  if (buf.length > 0) {
+    req.rawBody = Buffer.from(buf);
+  }
+}
+
+function resolveCorsOrigin(isProduction: boolean) {
+  const configuredOrigins = (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (configuredOrigins.length === 0) {
+    if (isProduction) {
+      throw new Error('FRONTEND_URL must be configured in production');
+    }
+    return 'http://localhost:3000';
+  }
+
+  return configuredOrigins.length === 1 ? configuredOrigins[0] : configuredOrigins;
+}
+
 async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
   const app = await NestFactory.create(AppModule, {
-    rawBody: true,
+    bodyParser: false,
   });
 
   app.use(
     helmet({
       contentSecurityPolicy: isProduction ? undefined : false,
+    }),
+  );
+
+  app.use(
+    '/api/v1/webhooks/github',
+    json({
+      limit: process.env.WEBHOOK_BODY_LIMIT || '5mb',
+      verify: captureRawBody,
+    }),
+  );
+  app.use(
+    json({
+      limit: process.env.API_BODY_LIMIT || '1mb',
+      verify: captureRawBody,
+    }),
+  );
+  app.use(
+    urlencoded({
+      extended: true,
+      limit: process.env.API_BODY_LIMIT || '1mb',
+      verify: captureRawBody,
     }),
   );
 
@@ -49,7 +95,7 @@ async function bootstrap() {
 
   // Enable CORS for frontend
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: resolveCorsOrigin(isProduction),
     credentials: true,
   });
 

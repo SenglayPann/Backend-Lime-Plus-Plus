@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AuthService, TokenResponse } from './auth.service';
 import { UsersService } from '../users/users.service';
@@ -63,6 +64,7 @@ export class AuthController {
    */
   @Post('exchange')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async exchange(
     @Body() body: ExchangeCodeDto,
     @Req() req: RequestWithUser,
@@ -84,6 +86,7 @@ export class AuthController {
    */
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async refresh(
     @Body() body: RefreshTokenDto,
     @Req() req: RequestWithUser,

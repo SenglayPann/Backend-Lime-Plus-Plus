@@ -10,6 +10,7 @@ import {
   Request,
   Headers,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -80,6 +81,7 @@ export class ProjectsController {
   @Post(':id/members')
   @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Add or update a project member' })
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async upsertMember(
     @Param('id') id: string,
     @Body() dto: UpsertProjectMemberDto,
@@ -97,6 +99,7 @@ export class ProjectsController {
   @Delete(':id/members/:memberId')
   @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Remove a project member' })
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async removeMember(
     @Param('id') id: string,
     @Param('memberId') memberId: string,
@@ -113,6 +116,7 @@ export class ProjectsController {
   @Post(':id/lock')
   @Roles(Role.DEPARTMENT_MANAGER)
   @ApiOperation({ summary: 'Lock project for grading (Dept Manager+)' })
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async lock(@Param('id') id: string, @Request() req: RequestWithUser) {
     return this.projectsService.lockProject(id, req.user.id, req.user.roles);
   }
@@ -120,6 +124,7 @@ export class ProjectsController {
   @Post(':id/tasks/sync')
   @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Manual sync tasks from GitHub (Project Manager+)' })
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async syncTasks(@Param('id') id: string, @Request() req: RequestWithUser) {
     // In a real app, the accessToken would come from the user's session or GitHub App token
     // For now, we'll assume it's passed or available.

@@ -11,6 +11,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import { Throttle } from '@nestjs/throttler';
 import { Queue } from 'bullmq';
 import { Request } from 'express';
 import { WebhooksService } from './webhooks.service';
@@ -42,6 +43,7 @@ export class WebhooksController {
 
   @Post('github')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 300, ttl: 60_000 } })
   async handleGitHubWebhook(
     @Headers('x-github-event') event: string,
     @Headers('x-github-delivery') deliveryId: string,
