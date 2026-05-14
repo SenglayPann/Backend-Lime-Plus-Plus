@@ -451,6 +451,7 @@ export class ProjectsService {
       tasksUpdated: 0,
       skippedDrafts: 0,
       skippedUnassigned: 0,
+      unassignedTasks: 0,
       membersAutoAdded: 0,
       warnings: [] as string[],
     };
@@ -471,15 +472,18 @@ export class ProjectsService {
         )?.name;
 
         const assignee = await this.resolveProjectItemAssignee(item);
-        if (!assignee) {
-          summary.skippedUnassigned += 1;
+        const assigneeId = assignee?.id ?? null;
+        if (!assigneeId) {
+          summary.unassignedTasks += 1;
           summary.warnings.push(
-            `Skipped ${externalTaskId}: no assignee available`,
+            `Imported ${externalTaskId} without an assignee`,
           );
-          return null;
         }
-        const memberAdded = await this.ensureProjectMembership(id, assignee.id);
-        if (memberAdded) summary.membersAutoAdded += 1;
+
+        if (assigneeId) {
+          const memberAdded = await this.ensureProjectMembership(id, assigneeId);
+          if (memberAdded) summary.membersAutoAdded += 1;
+        }
 
         // Map GitHub status to TaskStatus
         let taskStatus: TaskStatus = TaskStatus.TODO;
@@ -506,14 +510,14 @@ export class ProjectsService {
           update: {
             title: item.content.title,
             status: taskStatus,
-            assigneeId: assignee.id,
+            assigneeId,
           },
           create: {
             projectId: id,
             externalTaskId,
             title: item.content.title,
             status: taskStatus,
-            assigneeId: assignee.id,
+            assigneeId,
           },
         });
 
@@ -540,7 +544,7 @@ export class ProjectsService {
             );
           }
 
-          if (existingTask.assigneeId !== assignee.id) {
+          if (existingTask.assigneeId !== assigneeId) {
             auditWrites.push(
               this.prisma.auditLog.create({
                 data: {
@@ -551,7 +555,7 @@ export class ProjectsService {
                     type: 'TASK_ASSIGNEE_CHANGE',
                     taskId: externalTaskId,
                     previousAssigneeId: existingTask.assigneeId,
-                    newAssigneeId: assignee.id,
+                    newAssigneeId: assigneeId,
                     source: 'KANBAN_SYNC',
                   },
                 },
@@ -808,7 +812,7 @@ export class ProjectsService {
       this.prisma.task.count({
         where: {
           projectId,
-          assigneeId: { not: '' },
+          assigneeId: { not: null },
         },
       }),
     ]);

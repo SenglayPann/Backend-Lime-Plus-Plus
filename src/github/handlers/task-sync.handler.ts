@@ -133,27 +133,26 @@ export class TaskSyncHandler {
       return;
     }
 
-    const assignee = await this.resolveTaskAssignee(item, sender);
+    const assignee = await this.resolveTaskAssignee(item);
 
-    if (!assignee) {
-      this.logger.warn('Cannot create task: no assignee information available');
-      return;
+    if (assignee) {
+      await this.ensureProjectMembership(project.id, assignee.id);
     }
-
-    await this.ensureProjectMembership(project.id, assignee.id);
 
     await this.prisma.task.create({
       data: {
         projectId: project.id,
         externalTaskId,
         title: item.content?.title ?? `Task ${externalTaskId}`,
-        assigneeId: assignee.id,
+        assigneeId: assignee?.id ?? null,
         status: 'TODO',
         difficulty: 'MEDIUM',
       },
     });
 
-    this.logger.log(`Task ${externalTaskId} created for project ${project.id}`);
+    this.logger.log(
+      `Task ${externalTaskId} created for project ${project.id}${assignee ? '' : ' without assignee'}`,
+    );
   }
 
   /**
@@ -238,16 +237,27 @@ export class TaskSyncHandler {
 
     // Handle assignee field change
     if (changes.field_value?.field_name === 'Assignees') {
-      const actor = await this.resolveTaskAssignee(item, sender);
+      const assignee = await this.resolveTaskAssignee(item);
+      const newAssigneeId = assignee?.id ?? null;
 
-      if (actor && actor.id !== task.assigneeId) {
+      if (newAssigneeId !== task.assigneeId) {
         const previousAssigneeId = task.assigneeId;
+        const previousAssigneeName = task.assignee?.name ?? 'Unassigned';
+        const newAssigneeName =
+          assignee?.name ?? assignee?.githubUsername ?? 'Unassigned';
+        const actor = await this.findOrCreateUser(
+          String(sender.id),
+          sender.login,
+          sender.avatar_url,
+        );
 
-        await this.ensureProjectMembership(project.id, actor.id);
+        if (assignee) {
+          await this.ensureProjectMembership(project.id, assignee.id);
+        }
 
         await this.prisma.task.update({
           where: { id: task.id },
-          data: { assigneeId: actor.id },
+          data: { assigneeId: newAssigneeId },
         });
 
         // Log to audit_logs (spec §8 strict rules)
@@ -257,9 +267,10 @@ export class TaskSyncHandler {
             actorId: actor.id,
             projectId: project.id,
             metadata: {
+              type: 'TASK_ASSIGNEE_CHANGE',
               taskId: externalTaskId,
               previousAssigneeId,
-              newAssigneeId: actor.id,
+              newAssigneeId,
               hasOpenPRs: task.pullRequests.some((pr) => pr.status === 'OPEN'),
             },
           },
@@ -273,7 +284,7 @@ export class TaskSyncHandler {
         }
 
         this.logger.log(
-          `Task ${externalTaskId} assignee changed: ${task.assignee.name} → ${actor.name ?? sender.login}`,
+          `Task ${externalTaskId} assignee changed: ${previousAssigneeName} → ${newAssigneeName}`,
         );
       }
     }

@@ -165,6 +165,33 @@ describe('PrLifecycleHandler', () => {
         }),
       );
     });
+
+    it('should FLAG if linked task is unassigned', async () => {
+      mockPrismaService.project.findFirst.mockResolvedValue(project);
+      mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u1' });
+      mockPrismaService.task.findUnique.mockResolvedValue({
+        id: 't1',
+        assignee: null,
+      });
+
+      await handler.handle(defaultPayload);
+
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({
+              type: 'PR_ASSIGNEE_MISMATCH',
+              taskAssignee: 'Unassigned',
+            }) as unknown,
+          }) as unknown,
+        }),
+      );
+      expect(mockPrismaService.pullRequest.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ taskId: 't1' }) as unknown,
+        }),
+      );
+    });
   });
 
   describe('handleClosed', () => {

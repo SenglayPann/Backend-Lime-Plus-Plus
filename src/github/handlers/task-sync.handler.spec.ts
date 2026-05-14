@@ -71,7 +71,19 @@ describe('TaskSyncHandler', () => {
     mockPrismaService.task.findUnique.mockResolvedValue(null);
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'u1' });
 
-    await handler.handle({ ...basePayload, action: 'created' });
+    await handler.handle({
+      ...basePayload,
+      action: 'created',
+      projects_v2_item: {
+        ...basePayload.projects_v2_item,
+        content: {
+          title: 'Assigned task',
+          assignees: {
+            nodes: [{ id: 101, login: 'student', avatar_url: 'avatar' }],
+          },
+        },
+      },
+    } as GitHubProjectV2ItemEventPayload);
 
     expect(mockPrismaService.task.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -82,6 +94,31 @@ describe('TaskSyncHandler', () => {
         }) as unknown,
       }),
     );
+  });
+
+  it('should import created project items without an assignee', async () => {
+    mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1' });
+    mockPrismaService.task.findUnique.mockResolvedValue(null);
+
+    await handler.handle({
+      ...basePayload,
+      action: 'created',
+      projects_v2_item: {
+        ...basePayload.projects_v2_item,
+        content: { title: 'Unassigned task' },
+      },
+    } as GitHubProjectV2ItemEventPayload);
+
+    expect(mockPrismaService.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          externalTaskId: 'TASK-cn1',
+          assigneeId: null,
+          title: 'Unassigned task',
+        }) as unknown,
+      }),
+    );
+    expect(mockPrismaService.projectMember.upsert).not.toHaveBeenCalled();
   });
 
   it('should handle edited action by updating status', async () => {
@@ -142,6 +179,12 @@ describe('TaskSyncHandler', () => {
       action: 'edited',
       projects_v2_item: {
         ...basePayload.projects_v2_item,
+        content: {
+          title: 'Assigned task',
+          assignees: {
+            nodes: [{ id: 202, login: 'new-assignee', avatar_url: 'avatar' }],
+          },
+        },
         changes: { field_value: { field_name: 'Assignees' } },
       },
     } as GitHubProjectV2ItemEventPayload;
@@ -158,6 +201,46 @@ describe('TaskSyncHandler', () => {
         data: expect.objectContaining({
           action: 'TASK_REASSIGN',
           metadata: expect.objectContaining({ hasOpenPRs: true }) as unknown,
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('should allow assignee edits to clear an assignment', async () => {
+    mockPrismaService.project.findFirst.mockResolvedValue({ id: 'p1' });
+    mockPrismaService.task.findUnique.mockResolvedValue({
+      id: 't1',
+      status: 'TODO',
+      assigneeId: 'u1',
+      pullRequests: [],
+      assignee: { name: 'Old Assignee' },
+    });
+
+    const payload = {
+      ...basePayload,
+      action: 'edited',
+      projects_v2_item: {
+        ...basePayload.projects_v2_item,
+        content: { title: 'Unassigned task' },
+        changes: { field_value: { field_name: 'Assignees' } },
+      },
+    } as GitHubProjectV2ItemEventPayload;
+
+    await handler.handle(payload);
+
+    expect(mockPrismaService.task.update).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { assigneeId: null },
+    });
+    expect(mockPrismaService.projectMember.upsert).not.toHaveBeenCalled();
+    expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({
+            type: 'TASK_ASSIGNEE_CHANGE',
+            previousAssigneeId: 'u1',
+            newAssigneeId: null,
+          }) as unknown,
         }) as unknown,
       }),
     );

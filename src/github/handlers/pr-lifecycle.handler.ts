@@ -114,7 +114,7 @@ export class PrLifecycleHandler {
     );
 
     // Validate task linkage
-    let task: (Task & { assignee: SafeUser }) | null = null;
+    let task: (Task & { assignee: SafeUser | null }) | null = null;
     let validationStatus = 'VALID';
     let statusMessage = '';
 
@@ -133,7 +133,7 @@ export class PrLifecycleHandler {
           },
         },
         include: { assignee: { select: safeUserSelect } },
-      })) as (Task & { assignee: SafeUser }) | null;
+      })) as (Task & { assignee: SafeUser | null }) | null;
 
       if (!task) {
         this.logger.warn(
@@ -141,10 +141,14 @@ export class PrLifecycleHandler {
         );
         validationStatus = 'INVALID';
         statusMessage = `Task ${taskId} not found in this project`;
-      } else if (task.assignee.githubUserId !== String(pr.user.id)) {
+      } else if (
+        !task.assignee ||
+        task.assignee.githubUserId !== String(pr.user.id)
+      ) {
+        const taskAssigneeName = task.assignee?.name ?? 'Unassigned';
         // PR author ≠ task assignee → FLAG
         this.logger.warn(
-          `PR #${pr.number} author (${pr.user.login}) ≠ task ${taskId} assignee (${task.assignee.name}) — FLAGGED`,
+          `PR #${pr.number} author (${pr.user.login}) ≠ task ${taskId} assignee (${taskAssigneeName}) — FLAGGED`,
         );
         validationStatus = 'FLAGGED';
         statusMessage = `Assignee mismatch: PR author is not assigned to ${taskId}`;
@@ -159,7 +163,7 @@ export class PrLifecycleHandler {
               prNumber: pr.number,
               taskId: taskId,
               prAuthor: pr.user.login,
-              taskAssignee: task.assignee.name,
+              taskAssignee: taskAssigneeName,
             },
           },
         });

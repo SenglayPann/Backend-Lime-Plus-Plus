@@ -284,11 +284,13 @@ export class ReportsService {
           linkedPr: linkedPr?.externalPrId || 'N/A',
           prStatus: linkedPr?.status || 'N/A',
           mergedAt: linkedPr?.mergedAt || null,
-          score: this.findTaskScoreForUser(
-            project.contributionScores,
-            task.assigneeId,
-            task.externalTaskId,
-          ),
+          score: task.assigneeId
+            ? this.findTaskScoreForUser(
+                project.contributionScores,
+                task.assigneeId,
+                task.externalTaskId,
+              )
+            : 0,
         };
       }),
       overrides: project.scoreOverrides.map((override) => ({
@@ -759,7 +761,7 @@ export class ReportsService {
         email: string | null;
       };
     }>;
-    tasks: Array<{ assigneeId: string; status: string }>;
+    tasks: Array<{ assigneeId: string | null; status: string }>;
     pullRequests: Array<{
       authorId: string;
       status: string;
@@ -820,6 +822,7 @@ export class ReportsService {
     });
 
     project.tasks.forEach((task) => {
+      if (!task.assigneeId) return;
       if (task.status !== 'DONE') return;
       const member = members.get(task.assigneeId);
       if (member) member.doneTasks += 1;
@@ -850,7 +853,8 @@ export class ReportsService {
   private getUserName(user: {
     name: string | null;
     githubUsername: string | null;
-  }): string {
+  } | null): string {
+    if (!user) return 'Unassigned';
     return user.name || user.githubUsername || 'Unknown user';
   }
 }
@@ -872,7 +876,7 @@ type ScopeExportProject = {
       email: string | null;
     };
   }>;
-  tasks: Array<{ assigneeId: string; status: string }>;
+  tasks: Array<{ assigneeId: string | null; status: string }>;
   pullRequests: Array<{
     authorId: string;
     status: string;

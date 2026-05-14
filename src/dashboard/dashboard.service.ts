@@ -495,6 +495,7 @@ export class DashboardService {
       });
 
       project.tasks.forEach((task) => {
+        if (!task.assigneeId) return;
         if (task.status === 'DONE') activeContributorIds.add(task.assigneeId);
       });
       project.pullRequests.forEach((pr) => {
@@ -630,6 +631,7 @@ export class DashboardService {
 
       project.tasks.forEach((task) => {
         if (task.status !== 'DONE') return;
+        if (!task.assigneeId || !task.assignee) return;
         const contributor = ensureContributor(task.assigneeId, task.assignee);
         contributor.doneTasks += 1;
         projectContributorIds.add(contributor.userId);
@@ -732,9 +734,9 @@ type DashboardProject = {
     user: DashboardUser;
   }>;
   tasks: Array<{
-    assigneeId: string;
+    assigneeId: string | null;
     status: string;
-    assignee: DashboardUser;
+    assignee: DashboardUser | null;
   }>;
   pullRequests: Array<{
     authorId: string;
