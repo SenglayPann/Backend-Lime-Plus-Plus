@@ -197,10 +197,14 @@ export class GitHubService {
     const client = this.getAuthenticatedClient(accessToken);
 
     const query = `
-      query($projectId: ID!, $first: Int!) {
+      query($projectId: ID!, $first: Int!, $after: String) {
         node(id: $projectId) {
           ... on ProjectV2 {
-            items(first: $first) {
+            items(first: $first, after: $after) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
               nodes {
                 id
                 content {
@@ -249,11 +253,23 @@ export class GitHubService {
     `;
 
     try {
-      const response = await client<GraphQLProjectResponse>(query, {
-        projectId,
-        first,
-      });
-      return response.node.items.nodes;
+      const items: GitHubProjectItem[] = [];
+      let after: string | null = null;
+      let hasNextPage = true;
+
+      while (hasNextPage) {
+        const response: GraphQLProjectResponse =
+          await client<GraphQLProjectResponse>(query, {
+          projectId,
+          first,
+          after,
+        });
+        items.push(...response.node.items.nodes);
+        hasNextPage = response.node.items.pageInfo.hasNextPage;
+        after = response.node.items.pageInfo.endCursor;
+      }
+
+      return items;
     } catch (error) {
       this.logger.error(
         `Failed to fetch project items for ${projectId}`,

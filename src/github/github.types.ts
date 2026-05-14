@@ -68,6 +68,10 @@ export interface GraphQLProjectResponse {
   node: {
     items: {
       nodes: GitHubProjectItem[];
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
     };
   };
 }

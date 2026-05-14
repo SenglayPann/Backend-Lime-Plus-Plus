@@ -442,10 +442,24 @@ export class ProjectsService {
       );
     }
 
-    const results = await Promise.all(
+    const summary = {
+      totalItemsSeen: items.length,
+      tasksCreated: 0,
+      tasksUpdated: 0,
+      skippedDrafts: 0,
+      skippedUnassigned: 0,
+      membersAutoAdded: 0,
+      warnings: [] as string[],
+    };
+
+    await Promise.all(
       items.map(async (item) => {
         // Skip items without a title (e.g. empty rows)
-        if (!item.content?.title) return null;
+        if (!item.content?.title) {
+          summary.skippedDrafts += 1;
+          summary.warnings.push(`Skipped draft item ${item.id}: no title`);
+          return null;
+        }
 
         const externalTaskId = this.getTaskCode(item);
 
@@ -454,15 +468,32 @@ export class ProjectsService {
         )?.name;
 
         const assignee = await this.resolveProjectItemAssignee(item);
-        if (!assignee) return null;
-        await this.ensureProjectMembership(id, assignee.id);
+        if (!assignee) {
+          summary.skippedUnassigned += 1;
+          summary.warnings.push(
+            `Skipped ${externalTaskId}: no assignee available`,
+          );
+          return null;
+        }
+        const memberAdded = await this.ensureProjectMembership(id, assignee.id);
+        if (memberAdded) summary.membersAutoAdded += 1;
 
         // Map GitHub status to TaskStatus
         let taskStatus: TaskStatus = TaskStatus.TODO;
         if (statusValue === 'In Progress') taskStatus = TaskStatus.IN_PROGRESS;
         if (statusValue === 'Done') taskStatus = TaskStatus.DONE;
 
-        return this.prisma.task.upsert({
+        const existingTask = await this.prisma.task.findUnique({
+          where: {
+            projectId_externalTaskId: {
+              projectId: id,
+              externalTaskId,
+            },
+          },
+          select: { id: true },
+        });
+
+        await this.prisma.task.upsert({
           where: {
             projectId_externalTaskId: {
               projectId: id,
@@ -482,11 +513,20 @@ export class ProjectsService {
             assigneeId: assignee.id,
           },
         });
+
+        if (existingTask) {
+          summary.tasksUpdated += 1;
+        } else {
+          summary.tasksCreated += 1;
+        }
+
+        return null;
       }),
     );
 
     return {
-      syncedCount: results.filter((r) => r !== null).length,
+      ...summary,
+      syncedCount: summary.tasksCreated + summary.tasksUpdated,
     };
   }
 
@@ -531,7 +571,20 @@ export class ProjectsService {
     });
   }
 
-  private async ensureProjectMembership(projectId: string, userId: string) {
+  private async ensureProjectMembership(
+    projectId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const existing = await this.prisma.projectMember.findUnique({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId,
+        },
+      },
+      select: { id: true },
+    });
+
     await this.prisma.projectMember.upsert({
       where: {
         projectId_userId: {
@@ -546,6 +599,8 @@ export class ProjectsService {
         source: 'KANBAN_SYNC',
       },
     });
+
+    return !existing;
   }
 
   private assertProjectMembershipRole(role: PrismaRole) {

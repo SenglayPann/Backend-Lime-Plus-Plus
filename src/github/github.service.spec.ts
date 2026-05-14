@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { graphql } from '@octokit/graphql';
 
 // Mock @octokit/graphql before importing GitHubService (ESM module)
 jest.mock('@octokit/graphql', () => ({
@@ -21,6 +22,8 @@ describe('GitHubService', () => {
   let service: GitHubService;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GitHubService,
@@ -50,5 +53,41 @@ describe('GitHubService', () => {
 
   it('should have getProjectItems method', () => {
     expect(typeof service.getProjectItems).toBe('function');
+  });
+
+  it('should paginate Project V2 items until the cursor is exhausted', async () => {
+    const client = jest
+      .fn()
+      .mockResolvedValueOnce({
+        node: {
+          items: {
+            nodes: [{ id: 'item-1' }],
+            pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        node: {
+          items: {
+            nodes: [{ id: 'item-2' }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      });
+    (graphql.defaults as jest.Mock).mockReturnValue(client);
+
+    const result = await service.getProjectItems('project-id', 'token');
+
+    expect(result).toEqual([{ id: 'item-1' }, { id: 'item-2' }]);
+    expect(client).toHaveBeenNthCalledWith(1, expect.any(String), {
+      projectId: 'project-id',
+      first: 100,
+      after: null,
+    });
+    expect(client).toHaveBeenNthCalledWith(2, expect.any(String), {
+      projectId: 'project-id',
+      first: 100,
+      after: 'cursor-1',
+    });
   });
 });
