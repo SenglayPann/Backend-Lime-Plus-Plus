@@ -5,6 +5,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Project, Task, PullRequest } from '../../generated/prisma';
 import { safeUserSelect } from '../../common/serialization/safe-user-select';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import { repositoryProjectWhere } from '../repository-normalization';
 import {
   GitHubPullRequestEventPayload,
   GitHubPullRequestPayload,
@@ -56,7 +57,7 @@ export class PrLifecycleHandler {
 
     // Find the project by repository full name
     const project = await this.prisma.project.findFirst({
-      where: { repository: repository.full_name },
+      where: repositoryProjectWhere(repository.full_name),
     });
 
     if (!project) {

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GitHubPullRequestReviewEventPayload } from '../github-payloads';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import { repositoryProjectWhere } from '../repository-normalization';
 
 /**
  * PR Review Handler (spec §7)
@@ -61,7 +62,7 @@ export class PrReviewHandler {
 
     // Find the project
     const project = await this.prisma.project.findFirst({
-      where: { repository: repository.full_name },
+      where: repositoryProjectWhere(repository.full_name),
     });
 
     if (!project) {

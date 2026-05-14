@@ -113,6 +113,28 @@ describe('ProjectsService project membership', () => {
       ).not.toHaveBeenCalled();
     });
 
+    it('normalizes repository names before validation and storage', async () => {
+      await service.create(
+        { ...dto, repository: 'Owner/Repo' },
+        'creator',
+        ['DEPARTMENT_MANAGER'],
+        'gh-token',
+      );
+
+      expect(githubService.repositoryExists).toHaveBeenCalledWith(
+        'owner',
+        'repo',
+        'gh-token',
+      );
+      expect(prisma.project.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            repository: 'owner/repo',
+          }) as unknown,
+        }),
+      );
+    });
+
     it('blocks assigning a protected target as project manager', async () => {
       roleDelegationService.assertTargetCanBeManaged.mockRejectedValueOnce(
         new ForbiddenException('protected target'),

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GitHubPushEventPayload } from '../github-payloads';
+import { repositoryProjectWhere } from '../repository-normalization';
 
 /**
  * Push Event Handler (spec §10)
@@ -43,7 +44,7 @@ export class PushHandler {
 
     // Find the project (optional — push events are supporting only)
     const project = await this.prisma.project.findFirst({
-      where: { repository: repository.full_name },
+      where: repositoryProjectWhere(repository.full_name),
     });
 
     if (!project) {

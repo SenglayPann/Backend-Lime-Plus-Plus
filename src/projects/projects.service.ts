@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
 import type { GitHubProjectItem } from '../github/github.types';
+import { normalizeRepositoryFullName } from '../github/repository-normalization';
 import { UsersService } from '../users/users.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import {
@@ -66,7 +67,7 @@ export class ProjectsService {
       data: {
         name: dto.name,
         departmentId: dto.department_id,
-        repository: dto.repository,
+        repository: normalizeRepositoryFullName(dto.repository),
         externalProjectId: dto.github_project_id,
         evalStart: evaluationWindow.evalStart,
         evalEnd: evaluationWindow.evalEnd,
@@ -103,7 +104,7 @@ export class ProjectsService {
       );
     }
 
-    const repository = dto.repository.trim();
+    const repository = normalizeRepositoryFullName(dto.repository);
     const match = repository.match(/^([^/\s]+)\/([^/\s]+)$/);
 
     if (!match) {
