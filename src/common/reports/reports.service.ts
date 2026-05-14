@@ -302,7 +302,10 @@ export class ReportsService {
         action: auditLog.action,
         actor: this.getUserName(auditLog.actor),
         createdAt: auditLog.createdAt,
-        metadata: JSON.stringify(auditLog.metadata),
+        metadata: this.formatAuditMetadata(
+          auditLog.action,
+          auditLog.metadata,
+        ),
       })),
     };
 
@@ -441,6 +444,144 @@ export class ReportsService {
       reviewPoints: this.sumScores(breakdown.REVIEWS),
       overrideDelta: this.sumScores(breakdown.OVERRIDES),
     };
+  }
+
+  private formatAuditMetadata(action: string, metadata: unknown): string {
+    const data = this.asMetadataRecord(metadata);
+    if (!data) return 'No details';
+
+    if (action === 'ROLE_CHANGE') {
+      return this.formatRoleChangeMetadata(data);
+    }
+
+    if (action === 'TASK_REASSIGN') {
+      return this.formatTaskAuditMetadata(data);
+    }
+
+    if (action === 'PROJECT_LOCK') {
+      return this.formatProjectLockMetadata(data);
+    }
+
+    if (action === 'SCORE_OVERRIDE') {
+      return this.formatScoreOverrideMetadata(data);
+    }
+
+    return this.formatGenericAuditMetadata(data);
+  }
+
+  private formatRoleChangeMetadata(data: Record<string, unknown>): string {
+    const operation = this.humanizeOperation(data.operation);
+    const role = this.formatRole(data.role);
+    const previousRole = this.formatRole(data.previousRole);
+    const scope = data.departmentId
+      ? 'department scope'
+      : data.organizationId
+        ? 'organization scope'
+        : data.projectId
+          ? 'project scope'
+          : 'global scope';
+
+    const roleText =
+      previousRole && previousRole !== 'N/A'
+        ? `${previousRole} to ${role}`
+        : role;
+
+    return `${operation} ${roleText}; Scope: ${scope}`;
+  }
+
+  private formatTaskAuditMetadata(data: Record<string, unknown>): string {
+    if (data.type === 'PR_ASSIGNEE_MISMATCH') {
+      return [
+        `PR #${this.safeAuditValue(data.prNumber)}`,
+        `author ${this.safeAuditValue(data.prAuthor)}`,
+        `did not match ${this.safeAuditValue(data.taskId)} assignee ${this.safeAuditValue(data.taskAssignee)}`,
+      ].join(' ');
+    }
+
+    const warning =
+      data.hasOpenPRs === true ? '; Open PRs existed during reassignment' : '';
+    return `Task ${this.safeAuditValue(data.taskId)} reassigned${warning}`;
+  }
+
+  private formatProjectLockMetadata(data: Record<string, unknown>): string {
+    if (data.type === 'PROJECT_DELETED_ON_GITHUB') {
+      return `GitHub project deleted; Previous status: ${this.safeAuditValue(data.previousStatus)}`;
+    }
+
+    if (data.type === 'PROJECT_CLOSED_ON_GITHUB') {
+      return 'GitHub project closed';
+    }
+
+    if (data.previousStatus) {
+      return `Previous status: ${this.safeAuditValue(data.previousStatus)}`;
+    }
+
+    return 'Project status finalized';
+  }
+
+  private formatScoreOverrideMetadata(data: Record<string, unknown>): string {
+    const details = [`Score adjustment: ${this.safeAuditValue(data.delta)}`];
+    if (data.reason) {
+      details.push(`Reason: ${this.safeAuditValue(data.reason)}`);
+    }
+    return details.join('; ');
+  }
+
+  private formatGenericAuditMetadata(data: Record<string, unknown>): string {
+    const details = Object.entries(data)
+      .filter(([key]) => !/(^id$|id$|ids$)/i.test(key))
+      .map(([key, value]) => [this.humanizeKey(key), this.safeAuditValue(value)])
+      .filter(([, value]) => value !== 'N/A')
+      .map(([key, value]) => `${key}: ${value}`);
+
+    return details.length > 0 ? details.join('; ') : 'Details omitted';
+  }
+
+  private asMetadataRecord(value: unknown): Record<string, unknown> | null {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return null;
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private humanizeOperation(value: unknown): string {
+    const operation = typeof value === 'string' ? value : '';
+    const labels: Record<string, string> = {
+      assign: 'Assigned role',
+      remove: 'Removed role',
+      add_project_member: 'Added project member as',
+      update_project_member: 'Updated project member from',
+      remove_project_member: 'Removed project member with role',
+    };
+
+    return labels[operation] || this.humanizeKey(operation || 'Changed');
+  }
+
+  private humanizeKey(value: string): string {
+    return value
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^./, (char) => char.toUpperCase());
+  }
+
+  private formatRole(value: unknown): string {
+    if (typeof value !== 'string' || value.length === 0) return 'N/A';
+    return value.replace(/_/g, ' ');
+  }
+
+  private safeAuditValue(value: unknown): string {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return String(value);
+    }
+
+    return 'N/A';
   }
 
   private scopeExportProjectInclude() {

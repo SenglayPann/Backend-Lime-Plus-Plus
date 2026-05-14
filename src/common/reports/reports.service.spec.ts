@@ -151,6 +151,55 @@ describe('ReportsService', () => {
     });
   });
 
+  describe('exportProjectPdf', () => {
+    it('humanizes audit metadata without exposing raw internal IDs', async () => {
+      mockPrismaService.project.findUnique.mockResolvedValue({
+        id: 'p1',
+        name: 'Capstone',
+        repository: 'org/repo',
+        externalProjectId: 'PVT_1',
+        status: 'ACTIVE',
+        evalStart: null,
+        evalEnd: null,
+        lockedAt: null,
+        department: {
+          name: 'Computer Science',
+          organization: { name: 'Demo University' },
+        },
+        members: [],
+        tasks: [],
+        pullRequests: [],
+        contributionScores: [],
+        scoreOverrides: [],
+        auditLogs: [
+          {
+            action: 'ROLE_CHANGE',
+            actor: { name: 'Teacher', githubUsername: 'teacher' },
+            createdAt: new Date('2026-05-04T10:00:00.000Z'),
+            metadata: {
+              operation: 'assign',
+              targetUserId: 'user-db-id',
+              role: 'PROJECT_MANAGER',
+              organizationId: 'org-db-id',
+            },
+          },
+        ],
+      });
+      mockPdfService.generateProjectReport.mockResolvedValue(
+        Buffer.from('%PDF-project'),
+      );
+
+      await service.exportProjectPdf('p1', 'teacher', ['DEPARTMENT_MANAGER']);
+
+      const reportData = mockPdfService.generateProjectReport.mock.calls[0][0];
+      expect(reportData.auditLogs[0].metadata).toBe(
+        'Assigned role PROJECT MANAGER; Scope: organization scope',
+      );
+      expect(reportData.auditLogs[0].metadata).not.toContain('user-db-id');
+      expect(reportData.auditLogs[0].metadata).not.toContain('{');
+    });
+  });
+
   describe('exportProjectCsv', () => {
     it('generates an Excel-openable CSV with essential columns', async () => {
       mockPrismaService.project.findUnique.mockResolvedValue({
