@@ -26,13 +26,14 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles(Role.PROJECT_MEMBER)
+  @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'List visible users' })
   async findAll(@Request() req: RequestWithUser) {
     return this.usersService.findAll(req.user.id, req.user.roles);
   }
 
   @Get(':id')
+  @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Get user details with roles' })
   async findOne(@Param('id') id: string, @Request() req: RequestWithUser) {
     const user = await this.usersService.getUserWithRoles(

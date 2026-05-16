@@ -16,11 +16,11 @@ export class ProjectAccessService {
     roles: Role[],
     departmentId?: string,
   ): Prisma.ProjectWhereInput {
-    const clauses: Prisma.ProjectWhereInput[] = [];
-
     if (roles.includes('ADMIN')) {
-      clauses.push({});
+      return departmentId ? { departmentId } : {};
     }
+
+    const clauses: Prisma.ProjectWhereInput[] = [];
 
     if (roles.includes('ORGANIZATION_MANAGER')) {
       clauses.push({
@@ -229,11 +229,11 @@ export class ProjectAccessService {
     roles: Role[],
     departmentId?: string,
   ): Prisma.ProjectWhereInput | null {
-    const managementClauses: Prisma.ProjectWhereInput[] = [];
-
     if (roles.includes('ADMIN')) {
-      managementClauses.push({});
+      return departmentId ? { departmentId } : {};
     }
+
+    const managementClauses: Prisma.ProjectWhereInput[] = [];
 
     if (roles.includes('ORGANIZATION_MANAGER')) {
       managementClauses.push({

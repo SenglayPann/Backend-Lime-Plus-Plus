@@ -11,11 +11,23 @@ export function normalizeRepositoryFullName(repository: string): string {
 
 export function repositoryProjectWhere(
   repository: string,
+  githubRepositoryId?: string | number | null,
 ): Prisma.ProjectWhereInput {
-  return {
+  const repositoryNameMatch: Prisma.ProjectWhereInput = {
     repository: {
       equals: normalizeRepositoryFullName(repository),
       mode: 'insensitive',
     },
+  };
+
+  if (!githubRepositoryId) {
+    return repositoryNameMatch;
+  }
+
+  return {
+    OR: [
+      { githubRepositoryId: String(githubRepositoryId) },
+      repositoryNameMatch,
+    ],
   };
 }

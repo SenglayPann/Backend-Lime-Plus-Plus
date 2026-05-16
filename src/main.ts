@@ -53,14 +53,12 @@ async function bootstrap() {
   app.use(
     json({
       limit: process.env.API_BODY_LIMIT || '1mb',
-      verify: captureRawBody,
     }),
   );
   app.use(
     urlencoded({
       extended: true,
       limit: process.env.API_BODY_LIMIT || '1mb',
-      verify: captureRawBody,
     }),
   );
 

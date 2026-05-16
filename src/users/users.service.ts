@@ -7,10 +7,11 @@ import {
   scryptSync,
 } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role } from '../generated/prisma';
+import { Prisma, Role } from '../generated/prisma';
 import type { Role as AccessRole } from '../common/decorators/roles.decorator';
 import { RoleDelegationService } from '../common/access/role-delegation.service';
 import { UserVisibilityService } from '../common/access/user-visibility.service';
+import { ProjectAccessService } from '../common/access/project-access.service';
 
 export interface GitHubProfile {
   id: string;
@@ -27,6 +28,7 @@ export class UsersService {
     private configService: ConfigService,
     private roleDelegationService: RoleDelegationService,
     private userVisibilityService: UserVisibilityService,
+    private projectAccessService: ProjectAccessService,
   ) {}
 
   async findById(id: string) {
@@ -130,7 +132,10 @@ export class UsersService {
     if (!user) return null;
 
     const roles = await this.prisma.userRole.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...this.buildVisibleUserRoleWhere(actorId, actorRoles),
+      },
     });
 
     return {
@@ -159,7 +164,10 @@ export class UsersService {
             projectId: true,
             role: true,
             project: {
-              include: {
+              select: {
+                id: true,
+                name: true,
+                departmentId: true,
                 department: {
                   include: { organization: true },
                 },
@@ -239,6 +247,15 @@ export class UsersService {
   }
 
   async findAll(actorId: string, actorRoles: AccessRole[]) {
+    const visibleUserRoleWhere = this.buildVisibleUserRoleWhere(
+      actorId,
+      actorRoles,
+    );
+    const visibleProjectMemberWhere = this.buildVisibleProjectMemberWhere(
+      actorId,
+      actorRoles,
+    );
+
     return this.prisma.user.findMany({
       where: this.userVisibilityService.buildVisibleUserWhere(
         actorId,
@@ -253,12 +270,21 @@ export class UsersService {
         avatarUrl: true,
         createdAt: true,
         userRoles: {
+          where: visibleUserRoleWhere,
           include: {
             organization: { select: { id: true, name: true } },
-            department: { select: { id: true, name: true } },
+            department: {
+              select: {
+                id: true,
+                name: true,
+                organizationId: true,
+                organization: { select: { id: true, name: true } },
+              },
+            },
           },
         },
         projectMembers: {
+          where: visibleProjectMemberWhere,
           select: {
             id: true,
             role: true,
@@ -266,6 +292,15 @@ export class UsersService {
               select: {
                 id: true,
                 name: true,
+                departmentId: true,
+                department: {
+                  select: {
+                    id: true,
+                    name: true,
+                    organizationId: true,
+                    organization: { select: { id: true, name: true } },
+                  },
+                },
               },
             },
           },
@@ -304,6 +339,79 @@ export class UsersService {
     throw new ForbiddenException(
       'You do not have permission to view this user',
     );
+  }
+
+  private buildVisibleUserRoleWhere(
+    actorId: string,
+    actorRoles: AccessRole[],
+  ): Prisma.UserRoleWhereInput {
+    if (actorRoles.includes('ADMIN')) {
+      return {};
+    }
+
+    const clauses: Prisma.UserRoleWhereInput[] = [];
+
+    if (actorRoles.includes('ORGANIZATION_MANAGER')) {
+      clauses.push(
+        {
+          organization: {
+            userRoles: {
+              some: {
+                userId: actorId,
+                role: Role.ORGANIZATION_MANAGER,
+              },
+            },
+          },
+        },
+        {
+          department: {
+            organization: {
+              userRoles: {
+                some: {
+                  userId: actorId,
+                  role: Role.ORGANIZATION_MANAGER,
+                },
+              },
+            },
+          },
+        },
+      );
+    }
+
+    if (actorRoles.includes('DEPARTMENT_MANAGER')) {
+      clauses.push({
+        department: {
+          userRoles: {
+            some: {
+              userId: actorId,
+              role: Role.DEPARTMENT_MANAGER,
+            },
+          },
+        },
+      });
+    }
+
+    if (clauses.length === 0) {
+      return { id: '__no_visible_user_roles__' };
+    }
+
+    return clauses.length === 1 ? clauses[0] : { OR: clauses };
+  }
+
+  private buildVisibleProjectMemberWhere(
+    actorId: string,
+    actorRoles: AccessRole[],
+  ): Prisma.ProjectMemberWhereInput {
+    if (actorRoles.includes('ADMIN')) {
+      return {};
+    }
+
+    const projectWhere = this.projectAccessService.buildAccessibleProjectWhere(
+      actorId,
+      actorRoles,
+    );
+
+    return { project: projectWhere };
   }
 
   private encryptToken(token: string): string {

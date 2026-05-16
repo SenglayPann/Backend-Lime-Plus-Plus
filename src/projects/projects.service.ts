@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
 import type { GitHubProjectItem } from '../github/github.types';
 import { normalizeRepositoryFullName } from '../github/repository-normalization';
+import { findOrCreateGitHubUser } from '../github/github-user-resolution';
 import { UsersService } from '../users/users.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import {
@@ -51,7 +52,11 @@ export class ProjectsService {
       actorRoles,
       dto.department_id,
     );
-    await this.validateGitHubResources(dto, actorId, githubToken);
+    const githubResources = await this.validateGitHubResources(
+      dto,
+      actorId,
+      githubToken,
+    );
     const projectManagerId = dto.project_manager_id ?? actorId;
     await this.assertProjectManagerAssignable(
       projectManagerId,
@@ -68,6 +73,7 @@ export class ProjectsService {
         name: dto.name,
         departmentId: dto.department_id,
         repository: normalizeRepositoryFullName(dto.repository),
+        githubRepositoryId: githubResources.repositoryId,
         externalProjectId: dto.github_project_id,
         evalStart: evaluationWindow.evalStart,
         evalEnd: evaluationWindow.evalEnd,
@@ -114,12 +120,12 @@ export class ProjectsService {
     }
 
     const [, owner, repo] = match;
-    const [repoExists, projectExists] = await Promise.all([
-      this.githubService.repositoryExists(owner, repo, accessToken),
+    const [repositoryInfo, projectExists] = await Promise.all([
+      this.githubService.getRepositoryInfo(owner, repo, accessToken),
       this.githubService.projectV2Exists(dto.github_project_id, accessToken),
     ]);
 
-    if (!repoExists) {
+    if (!repositoryInfo) {
       throw new BadRequestException(
         `GitHub repository ${repository} was not found or the token cannot access it`,
       );
@@ -130,6 +136,8 @@ export class ProjectsService {
         'GitHub Project V2 was not found or the token cannot access it',
       );
     }
+
+    return { repositoryId: repositoryInfo.id };
   }
 
   private resolveEvaluationWindow(
@@ -223,12 +231,32 @@ export class ProjectsService {
       id,
     );
 
+    const canManageProject = await this.projectAccessService.canManageProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+
     const project = await this.prisma.project.findUnique({
       where: { id },
       include: {
         department: true,
         members: { include: { user: { select: safeUserSelect } } },
-        _count: { select: { members: true, tasks: true, pullRequests: true } },
+        _count: {
+          select: {
+            members: true,
+            tasks: canManageProject
+              ? true
+              : {
+                  where: { assigneeId: actorId },
+                },
+            pullRequests: canManageProject
+              ? true
+              : {
+                  where: { authorId: actorId },
+                },
+          },
+        },
       },
     });
 
@@ -263,7 +291,12 @@ export class ProjectsService {
       id,
     );
     this.assertProjectMembershipRole(role);
-    await this.assertProjectMemberUserExists(userId);
+    await this.assertProjectMemberTargetCanBeAssigned(
+      id,
+      userId,
+      actorId,
+      actorRoles,
+    );
 
     if (role === PrismaRole.PROJECT_MANAGER) {
       await this.assertCanAssignProjectManager(id, actorId, actorRoles);
@@ -601,21 +634,10 @@ export class ProjectsService {
 
     if (!githubUserId) return null;
 
-    const existing = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ githubUserId }, { githubUsername: assignee.login }],
-      },
-    });
-
-    if (existing) return existing;
-
-    return this.prisma.user.create({
-      data: {
-        githubUserId,
-        githubUsername: assignee.login,
-        name: assignee.login,
-        avatarUrl: assignee.avatarUrl ?? null,
-      },
+    return findOrCreateGitHubUser(this.prisma, {
+      githubUserId,
+      login: assignee.login,
+      avatarUrl: assignee.avatarUrl,
     });
   }
 
@@ -670,6 +692,71 @@ export class ProjectsService {
 
     if (!user) {
       throw new BadRequestException('Selected user does not exist');
+    }
+  }
+
+  private async assertProjectMemberTargetCanBeAssigned(
+    projectId: string,
+    userId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    await this.assertProjectMemberUserExists(userId);
+
+    if (!actorRoles.includes('ADMIN') && userId !== actorId) {
+      await this.roleDelegationService.assertTargetCanBeManaged(
+        actorId,
+        actorRoles,
+        userId,
+      );
+    }
+
+    if (actorRoles.includes('ADMIN')) {
+      return;
+    }
+
+    const visibleUser = await this.prisma.user.findFirst({
+      where: {
+        AND: [
+          { id: userId },
+          this.userVisibilityService.buildVisibleUserWhere(
+            actorId,
+            actorRoles,
+          ),
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!visibleUser) {
+      throw new ForbiddenException(
+        'Selected user is outside your visible scope',
+      );
+    }
+
+    const manageableWhere = this.projectAccessService.buildManageableProjectWhere(
+      actorId,
+      actorRoles,
+    );
+
+    if (!manageableWhere) {
+      throw new ForbiddenException(
+        'You do not have permission to manage this project member',
+      );
+    }
+
+    const manageableProject = await this.prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...manageableWhere,
+      },
+      select: { id: true },
+    });
+
+    if (!manageableProject) {
+      throw new ForbiddenException(
+        'You do not have permission to manage this project member',
+      );
     }
   }
 

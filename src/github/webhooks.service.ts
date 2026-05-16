@@ -93,7 +93,10 @@ export class WebhooksService {
     const existing = await this.prisma.webhookDelivery.findUnique({
       where: { deliveryId },
     });
-    return Boolean(existing?.queuedAt || existing?.processedAt);
+    if (!existing) return false;
+    if (existing.processedAt) return true;
+    if (existing.failedAt) return false;
+    return Boolean(existing.queuedAt);
   }
 
   /**

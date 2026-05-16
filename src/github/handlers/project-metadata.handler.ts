@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Project } from '../../generated/prisma';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
+import { findOrCreateGitHubUser } from '../github-user-resolution';
 import {
   GitHubProjectV2EventPayload,
   GitHubProjectV2Payload,
@@ -58,6 +60,11 @@ export class ProjectMetadataHandler {
       this.logger.warn(
         `Ignoring projects_v2 ${action} for locked project ${project.id}`,
       );
+      await auditIgnoredLockedWebhook(this.prisma, project, sender, {
+        event: 'projects_v2',
+        action,
+        projectNodeId: projects_v2.node_id,
+      });
       return;
     }
 
@@ -182,20 +189,10 @@ export class ProjectMetadataHandler {
     login: string,
     avatarUrl?: string,
   ) {
-    let user = await this.prisma.user.findUnique({
-      where: { githubUserId },
+    return findOrCreateGitHubUser(this.prisma, {
+      githubUserId,
+      login,
+      avatarUrl,
     });
-
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          githubUserId,
-          name: login,
-          avatarUrl: avatarUrl ?? null,
-        },
-      });
-    }
-
-    return user;
   }
 }

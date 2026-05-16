@@ -24,4 +24,13 @@ export class UpdateDepartmentDto {
   @MaxLength(1000)
   @IsOptional()
   description?: string;
+
+  @ApiProperty({
+    example: 'd6c54a4d-8a13-4a99-9d19-901c40b3a8ff',
+    description: 'User to add as a department manager',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  manager_user_id?: string;
 }

@@ -11,14 +11,20 @@ describe('ReportsService', () => {
   let service: ReportsService;
 
   const mockPrismaService = {
-    contributionScore: { findUnique: jest.fn(), findMany: jest.fn() },
+    contributionScore: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
     project: { findUnique: jest.fn(), findMany: jest.fn() },
+    projectMember: { count: jest.fn() },
     organization: { findUnique: jest.fn() },
     department: { findUnique: jest.fn() },
-    pullRequest: { findMany: jest.fn() },
+    pullRequest: { findMany: jest.fn(), count: jest.fn() },
     prReview: { findMany: jest.fn() },
-    task: { findMany: jest.fn() },
-    scoreOverride: { findMany: jest.fn() },
+    task: { findMany: jest.fn(), count: jest.fn() },
+    scoreOverride: { findMany: jest.fn(), count: jest.fn() },
+    auditLog: { count: jest.fn() },
   };
 
   const mockPdfService = {
@@ -54,6 +60,13 @@ describe('ReportsService', () => {
 
     service = module.get<ReportsService>(ReportsService);
     jest.clearAllMocks();
+    mockPrismaService.projectMember.count.mockResolvedValue(0);
+    mockPrismaService.task.count.mockResolvedValue(0);
+    mockPrismaService.pullRequest.count.mockResolvedValue(0);
+    mockPrismaService.contributionScore.findMany.mockResolvedValue([]);
+    mockPrismaService.contributionScore.count.mockResolvedValue(0);
+    mockPrismaService.scoreOverride.count.mockResolvedValue(0);
+    mockPrismaService.auditLog.count.mockResolvedValue(0);
   });
 
   describe('exportIndividualPdf', () => {
@@ -291,17 +304,12 @@ describe('ReportsService', () => {
     });
 
     it('rejects oversized project CSV exports before summary generation', async () => {
-      mockPrismaService.project.findUnique.mockResolvedValue({
-        members: Array.from({ length: 5001 }, () => ({})),
-        tasks: [],
-        pullRequests: [],
-        contributionScores: [],
-        scoreOverrides: [],
-      });
+      mockPrismaService.projectMember.count.mockResolvedValueOnce(5001);
 
       await expect(
         service.exportProjectCsv('p1', 'teacher', ['DEPARTMENT_MANAGER']),
       ).rejects.toThrow(PayloadTooLargeException);
+      expect(mockPrismaService.project.findUnique).not.toHaveBeenCalled();
     });
   });
 

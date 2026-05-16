@@ -56,6 +56,15 @@ describe('scope-aware access policies', () => {
         ),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('keeps admin organization access global when combined with scoped roles', () => {
+      expect(
+        service.buildAccessibleOrganizationWhere('admin', [
+          'ADMIN',
+          'ORGANIZATION_MANAGER',
+        ]),
+      ).toEqual({});
+    });
   });
 
   describe('DepartmentAccessService', () => {
@@ -98,6 +107,22 @@ describe('scope-aware access policies', () => {
         },
       });
     });
+
+    it('keeps admin department access global when combined with scoped roles', () => {
+      expect(
+        service.buildAccessibleDepartmentWhere('admin', [
+          'ADMIN',
+          'DEPARTMENT_MANAGER',
+        ]),
+      ).toEqual({});
+      expect(
+        service.buildAccessibleDepartmentWhere(
+          'admin',
+          ['ADMIN', 'DEPARTMENT_MANAGER'],
+          'org-1',
+        ),
+      ).toEqual({ organizationId: 'org-1' });
+    });
   });
 
   describe('ProjectAccessService', () => {
@@ -120,6 +145,21 @@ describe('scope-aware access policies', () => {
           },
         },
       });
+    });
+
+    it('keeps admin project access global when combined with scoped roles', () => {
+      expect(
+        service.buildAccessibleProjectWhere('admin', [
+          'ADMIN',
+          'PROJECT_MEMBER',
+        ]),
+      ).toEqual({});
+      expect(
+        service.buildManageableProjectWhere('admin', [
+          'ADMIN',
+          'PROJECT_MANAGER',
+        ]),
+      ).toEqual({});
     });
 
     it('allows department managers to create projects only in managed departments', async () => {

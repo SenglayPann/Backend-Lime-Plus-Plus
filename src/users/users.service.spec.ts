@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { RoleDelegationService } from '../common/access/role-delegation.service';
 import { UserVisibilityService } from '../common/access/user-visibility.service';
+import { ProjectAccessService } from '../common/access/project-access.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -30,6 +31,9 @@ describe('UsersService', () => {
   const mockUserVisibilityService = {
     buildVisibleUserWhere: jest.fn().mockReturnValue({ id: 'visible' }),
   };
+  const mockProjectAccessService = {
+    buildAccessibleProjectWhere: jest.fn().mockReturnValue({ id: 'project-1' }),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -39,6 +43,7 @@ describe('UsersService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: RoleDelegationService, useValue: mockRoleDelegationService },
         { provide: UserVisibilityService, useValue: mockUserVisibilityService },
+        { provide: ProjectAccessService, useValue: mockProjectAccessService },
       ],
     }).compile();
 
@@ -46,6 +51,9 @@ describe('UsersService', () => {
     jest.clearAllMocks();
     mockUserVisibilityService.buildVisibleUserWhere.mockReturnValue({
       id: 'visible',
+    });
+    mockProjectAccessService.buildAccessibleProjectWhere.mockReturnValue({
+      id: 'project-1',
     });
   });
 
@@ -266,12 +274,21 @@ describe('UsersService', () => {
           avatarUrl: true,
           createdAt: true,
           userRoles: {
+            where: {},
             include: {
               organization: { select: { id: true, name: true } },
-              department: { select: { id: true, name: true } },
+              department: {
+                select: {
+                  id: true,
+                  name: true,
+                  organizationId: true,
+                  organization: { select: { id: true, name: true } },
+                },
+              },
             },
           },
           projectMembers: {
+            where: {},
             select: {
               id: true,
               role: true,
@@ -279,6 +296,15 @@ describe('UsersService', () => {
                 select: {
                   id: true,
                   name: true,
+                  departmentId: true,
+                  department: {
+                    select: {
+                      id: true,
+                      name: true,
+                      organizationId: true,
+                      organization: { select: { id: true, name: true } },
+                    },
+                  },
                 },
               },
             },

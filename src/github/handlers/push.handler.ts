@@ -44,7 +44,7 @@ export class PushHandler {
 
     // Find the project (optional — push events are supporting only)
     const project = await this.prisma.project.findFirst({
-      where: repositoryProjectWhere(repository.full_name),
+      where: repositoryProjectWhere(repository.full_name, repository.id),
     });
 
     if (!project) {

@@ -161,6 +161,18 @@ describe('WebhooksService', () => {
 
       expect(await service.isDuplicate('stalled-delivery')).toBe(false);
     });
+
+    it('should return false for failed unprocessed deliveries so GitHub redelivery can requeue them', async () => {
+      mockPrismaService.webhookDelivery.findUnique.mockResolvedValue({
+        id: '1',
+        deliveryId: 'failed-delivery',
+        queuedAt: new Date(),
+        processedAt: null,
+        failedAt: new Date(),
+      });
+
+      expect(await service.isDuplicate('failed-delivery')).toBe(false);
+    });
   });
 
   describe('storeDelivery', () => {

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { LICENSE_PLANS } from './create-organization.dto';
 
 export class UpdateOrganizationDto {
@@ -17,4 +17,13 @@ export class UpdateOrganizationDto {
   @IsIn(LICENSE_PLANS)
   @IsOptional()
   license_plan?: string;
+
+  @ApiProperty({
+    example: 'd6c54a4d-8a13-4a99-9d19-901c40b3a8ff',
+    description: 'User to add as an organization manager',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  manager_user_id?: string;
 }

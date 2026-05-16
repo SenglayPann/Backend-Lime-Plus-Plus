@@ -26,6 +26,7 @@ describe('ProjectsService project membership', () => {
     auditLog: { create: jest.fn() },
   };
   const githubService = {
+    getRepositoryInfo: jest.fn(),
     repositoryExists: jest.fn(),
     projectV2Exists: jest.fn(),
   };
@@ -35,6 +36,7 @@ describe('ProjectsService project membership', () => {
     assertCanManageProject: jest.fn(),
     assertCanViewProject: jest.fn(),
     assertCanCreateProjectInDepartment: jest.fn(),
+    buildManageableProjectWhere: jest.fn(),
   };
   const projectLockGuard = {
     assertMutable: jest.fn(),
@@ -67,11 +69,18 @@ describe('ProjectsService project membership', () => {
     projectLockGuard.assertMutable.mockReturnValue(undefined);
     roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
     userVisibilityService.buildVisibleUserWhere.mockReturnValue({});
+    projectAccessService.buildManageableProjectWhere.mockReturnValue({});
+    githubService.getRepositoryInfo.mockResolvedValue({
+      id: 'repo-1',
+      nameWithOwner: 'owner/repo',
+      url: 'https://github.com/owner/repo',
+    });
     githubService.repositoryExists.mockResolvedValue(true);
     githubService.projectV2Exists.mockResolvedValue(true);
     usersService.getGitHubAccessToken.mockResolvedValue(null);
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
     prisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
+    prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
     prisma.project.create.mockResolvedValue({ id: 'project-1' });
     prisma.projectMember.findUnique.mockResolvedValue(null);
     prisma.projectMember.upsert.mockResolvedValue({ id: 'member-1' });
@@ -121,7 +130,7 @@ describe('ProjectsService project membership', () => {
         'gh-token',
       );
 
-      expect(githubService.repositoryExists).toHaveBeenCalledWith(
+      expect(githubService.getRepositoryInfo).toHaveBeenCalledWith(
         'owner',
         'repo',
         'gh-token',
@@ -130,6 +139,7 @@ describe('ProjectsService project membership', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             repository: 'owner/repo',
+            githubRepositoryId: 'repo-1',
           }) as unknown,
         }),
       );

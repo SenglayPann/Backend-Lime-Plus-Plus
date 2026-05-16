@@ -108,7 +108,6 @@ export class AuthController {
    * Access tokens remain short-lived; clients should discard them locally.
    */
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async logout(@Body() body: Partial<RefreshTokenDto>): Promise<{ message: string }> {
     if (body.refreshToken) {

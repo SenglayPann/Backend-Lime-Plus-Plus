@@ -279,11 +279,11 @@ export class GitHubService {
     }
   }
 
-  async repositoryExists(
+  async getRepositoryInfo(
     owner: string,
     repo: string,
     accessToken: string,
-  ): Promise<boolean> {
+  ): Promise<GraphQLRepositoryValidationResponse['repository']> {
     const client = this.getAuthenticatedClient(accessToken);
 
     const query = `
@@ -301,13 +301,21 @@ export class GitHubService {
         query,
         { owner, repo },
       );
-      return !!response.repository;
+      return response.repository;
     } catch {
       this.logger.warn(
         `GitHub repository validation failed for ${owner}/${repo}`,
       );
-      return false;
+      return null;
     }
+  }
+
+  async repositoryExists(
+    owner: string,
+    repo: string,
+    accessToken: string,
+  ): Promise<boolean> {
+    return Boolean(await this.getRepositoryInfo(owner, repo, accessToken));
   }
 
   async projectV2Exists(

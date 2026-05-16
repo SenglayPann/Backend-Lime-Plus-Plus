@@ -61,6 +61,7 @@ enum AuditAction {
   TASK_REASSIGN
   PROJECT_LOCK
   ROLE_CHANGE
+  WEBHOOK_IGNORED
 }
 
 // Models
@@ -124,6 +125,10 @@ model UserRole {
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   department     Department?   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
+  /// Scoped role uniqueness is enforced by PostgreSQL partial indexes in
+  /// 20260514034500_add_scoped_user_role_unique_indexes. Do not replace those
+  /// with one nullable composite @@unique; PostgreSQL treats NULL values as
+  /// distinct and would allow duplicate global/scoped roles.
   @@map("user_roles")
 }
 
@@ -133,6 +138,7 @@ model Project {
   name               String
   platform           Platform            @default(GITHUB)
   repository         String
+  githubRepositoryId String?             @unique @map("github_repository_id")
   externalProjectId  String?             @map("external_project_id")
   status             ProjectStatus       @default(ACTIVE)
   evalStart          DateTime?           @map("eval_start") @db.Date

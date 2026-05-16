@@ -16,11 +16,11 @@ export class DepartmentAccessService {
     roles: Role[],
     organizationId?: string,
   ): Prisma.DepartmentWhereInput {
-    const clauses: Prisma.DepartmentWhereInput[] = [];
-
     if (roles.includes('ADMIN')) {
-      clauses.push({});
+      return organizationId ? { organizationId } : {};
     }
+
+    const clauses: Prisma.DepartmentWhereInput[] = [];
 
     if (roles.includes('ORGANIZATION_MANAGER')) {
       clauses.push({

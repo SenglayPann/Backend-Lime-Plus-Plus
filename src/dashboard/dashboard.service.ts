@@ -160,6 +160,10 @@ export class DashboardService {
       this.prisma.organization.findUnique({
         where: { id: organizationId },
         include: {
+          userRoles: {
+            where: { role: 'ORGANIZATION_MANAGER' },
+            include: { user: { select: safeUserSelect } },
+          },
           _count: {
             select: {
               departments: true,
@@ -196,6 +200,9 @@ export class DashboardService {
         name: organization.name,
         licensePlan: organization.licensePlan,
         createdAt: organization.createdAt,
+        managers: (organization.userRoles || []).map((role) =>
+          this.getUserName(role.user),
+        ),
       },
       summary: this.buildScopeSummary(projects, departments.length),
       departments: this.buildDepartmentSummaries(departments, projects),

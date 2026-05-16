@@ -73,8 +73,8 @@ export class DepartmentsController {
   }
 
   @Patch(':id')
-  @Roles(Role.ORGANIZATION_MANAGER)
-  @ApiOperation({ summary: 'Update a department (Org Manager+)' })
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'Update a department (Dept Manager+)' })
   async update(
     @Param('id') id: string,
     @Body() updateDepartmentDto: UpdateDepartmentDto,
@@ -89,8 +89,8 @@ export class DepartmentsController {
   }
 
   @Delete(':id')
-  @Roles(Role.ORGANIZATION_MANAGER)
-  @ApiOperation({ summary: 'Delete a department (Org Manager+)' })
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'Delete an empty department (Dept Manager+)' })
   async remove(@Param('id') id: string, @Request() req: RequestWithUser) {
     return this.departmentsService.remove(id, req.user.id, req.user.roles);
   }

@@ -12,6 +12,8 @@ import {
   GitHubInstallationPayload,
   GitHubRepositoryPayload,
 } from '../github-payloads';
+import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
+import { findOrCreateGitHubUser } from '../github-user-resolution';
 
 /**
  * PR Lifecycle Handler (spec §5, §6)
@@ -57,7 +59,7 @@ export class PrLifecycleHandler {
 
     // Find the project by repository full name
     const project = await this.prisma.project.findFirst({
-      where: repositoryProjectWhere(repository.full_name),
+      where: repositoryProjectWhere(repository.full_name, repository.id),
     });
 
     if (!project) {
@@ -71,6 +73,12 @@ export class PrLifecycleHandler {
       this.logger.warn(
         `Ignoring pull_request ${action} for locked project ${project.id}`,
       );
+      await auditIgnoredLockedWebhook(this.prisma, project, payload.sender, {
+        event: 'pull_request',
+        action,
+        repository: repository.full_name,
+        pullRequestNumber: pull_request.number,
+      });
       return;
     }
 
@@ -460,25 +468,11 @@ export class PrLifecycleHandler {
     login: string,
     avatarUrl?: string,
   ) {
-    let user = await this.prisma.user.findUnique({
-      where: { githubUserId },
+    return findOrCreateGitHubUser(this.prisma, {
+      githubUserId,
+      login,
+      avatarUrl,
     });
-
-    if (!user) {
-      this.logger.log(
-        `Auto-creating user record for GitHub user ${login} (${githubUserId})`,
-      );
-      user = await this.prisma.user.create({
-        data: {
-          githubUserId,
-          githubUsername: login,
-          name: login,
-          avatarUrl: avatarUrl ?? null,
-        },
-      });
-    }
-
-    return user;
   }
 }
 

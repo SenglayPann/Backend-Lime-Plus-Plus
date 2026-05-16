@@ -15,11 +15,11 @@ export class OrganizationAccessService {
     userId: string,
     roles: Role[],
   ): Prisma.OrganizationWhereInput {
-    const clauses: Prisma.OrganizationWhereInput[] = [];
-
     if (roles.includes('ADMIN')) {
-      clauses.push({});
+      return {};
     }
+
+    const clauses: Prisma.OrganizationWhereInput[] = [];
 
     if (roles.includes('ORGANIZATION_MANAGER')) {
       clauses.push({

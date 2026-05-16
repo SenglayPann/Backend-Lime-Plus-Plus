@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { Parser } from 'json2csv';
-import { ProjectStatus } from '../../generated/prisma';
+import { Prisma, ProjectStatus } from '../../generated/prisma';
 import { ScoreBreakdown } from '../../scoring/scoring.service';
 import { ProjectAccessService } from '../access/project-access.service';
 import { OrganizationAccessService } from '../access/organization-access.service';
@@ -187,6 +187,11 @@ export class ReportsService {
       actorRoles,
       projectId,
     );
+    await this.assertProjectExportWithinSyncLimitBeforeLoad(
+      projectId,
+      'Project PDF report',
+      true,
+    );
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -332,6 +337,11 @@ export class ReportsService {
       actorRoles,
       projectId,
     );
+    await this.assertProjectExportWithinSyncLimitBeforeLoad(
+      projectId,
+      'Project CSV export',
+      false,
+    );
 
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -403,8 +413,14 @@ export class ReportsService {
 
     if (!organization) throw new NotFoundException('Organization not found');
 
+    const organizationProjectWhere = { department: { organizationId } };
+    await this.assertScopeExportWithinSyncLimitBeforeLoad(
+      organizationProjectWhere,
+      'Organization CSV export',
+    );
+
     const projects = await this.prisma.project.findMany({
-      where: { department: { organizationId } },
+      where: organizationProjectWhere,
       include: this.scopeExportProjectInclude(),
       orderBy: { name: 'asc' },
     });
@@ -437,8 +453,14 @@ export class ReportsService {
 
     if (!department) throw new NotFoundException('Department not found');
 
+    const departmentProjectWhere = { departmentId };
+    await this.assertScopeExportWithinSyncLimitBeforeLoad(
+      departmentProjectWhere,
+      'Department CSV export',
+    );
+
     const projects = await this.prisma.project.findMany({
-      where: { departmentId },
+      where: departmentProjectWhere,
       include: this.scopeExportProjectInclude(),
       orderBy: { name: 'asc' },
     });
@@ -479,6 +501,10 @@ export class ReportsService {
 
     if (action === 'SCORE_OVERRIDE') {
       return this.formatScoreOverrideMetadata(data);
+    }
+
+    if (action === 'WEBHOOK_IGNORED') {
+      return this.formatWebhookIgnoredMetadata(data);
     }
 
     return this.formatGenericAuditMetadata(data);
@@ -548,6 +574,13 @@ export class ReportsService {
       details.push(`Reason: ${this.safeAuditValue(data.reason)}`);
     }
     return details.join('; ');
+  }
+
+  private formatWebhookIgnoredMetadata(data: Record<string, unknown>): string {
+    return [
+      `Ignored ${this.safeAuditValue(data.event)} ${this.safeAuditValue(data.action)}`,
+      `Reason: ${this.safeAuditValue(data.reason)}`,
+    ].join('; ');
   }
 
   private formatGenericAuditMetadata(data: Record<string, unknown>): string {
@@ -627,15 +660,12 @@ export class ReportsService {
   ) {
     const recordCount = this.countProjectExportRecords(project);
 
-    if (recordCount > MAX_SYNC_PROJECT_EXPORT_RECORDS) {
-      throw new PayloadTooLargeException(
-        [
-          `${label} is too large for synchronous download`,
-          `(${recordCount} records).`,
-          'Narrow the project data or use a background export flow.',
-        ].join(' '),
-      );
-    }
+    this.assertRecordCountWithinLimit(
+      recordCount,
+      MAX_SYNC_PROJECT_EXPORT_RECORDS,
+      label,
+      'project data',
+    );
   }
 
   private assertScopeExportWithinSyncLimit(
@@ -647,15 +677,111 @@ export class ReportsService {
       0,
     );
 
-    if (recordCount > MAX_SYNC_SCOPE_EXPORT_RECORDS) {
-      throw new PayloadTooLargeException(
-        [
-          `${label} is too large for synchronous download`,
-          `(${recordCount} records).`,
-          'Narrow the scope or use a background export flow.',
-        ].join(' '),
-      );
+    this.assertRecordCountWithinLimit(
+      recordCount,
+      MAX_SYNC_SCOPE_EXPORT_RECORDS,
+      label,
+      'scope',
+    );
+  }
+
+  private async assertProjectExportWithinSyncLimitBeforeLoad(
+    projectId: string,
+    label: string,
+    includeAuditLogs: boolean,
+  ) {
+    const [
+      members,
+      tasks,
+      pullRequests,
+      contributionScores,
+      scoreOverrides,
+      auditLogs,
+    ] = await Promise.all([
+      this.prisma.projectMember.count({ where: { projectId } }),
+      this.prisma.task.count({ where: { projectId } }),
+      this.prisma.pullRequest.count({ where: { projectId } }),
+      this.prisma.contributionScore.count({ where: { projectId } }),
+      this.prisma.scoreOverride.count({ where: { projectId } }),
+      includeAuditLogs
+        ? this.prisma.auditLog.count({ where: { projectId } })
+        : Promise.resolve(0),
+    ]);
+
+    this.assertRecordCountWithinLimit(
+      members +
+        tasks +
+        pullRequests +
+        contributionScores +
+        scoreOverrides +
+        auditLogs,
+      MAX_SYNC_PROJECT_EXPORT_RECORDS,
+      label,
+      'project data',
+    );
+  }
+
+  private async assertScopeExportWithinSyncLimitBeforeLoad(
+    where: Prisma.ProjectWhereInput,
+    label: string,
+  ) {
+    const projects = await this.prisma.project.findMany({
+      where,
+      select: { id: true },
+    });
+    const projectIds = projects.map((project) => project.id);
+
+    if (projectIds.length === 0) {
+      return;
     }
+
+    const [
+      members,
+      tasks,
+      pullRequests,
+      contributionScores,
+      scoreOverrides,
+    ] = await Promise.all([
+      this.prisma.projectMember.count({
+        where: { projectId: { in: projectIds } },
+      }),
+      this.prisma.task.count({ where: { projectId: { in: projectIds } } }),
+      this.prisma.pullRequest.count({
+        where: { projectId: { in: projectIds } },
+      }),
+      this.prisma.contributionScore.count({
+        where: { projectId: { in: projectIds } },
+      }),
+      this.prisma.scoreOverride.count({
+        where: { projectId: { in: projectIds } },
+      }),
+    ]);
+
+    this.assertRecordCountWithinLimit(
+      members + tasks + pullRequests + contributionScores + scoreOverrides,
+      MAX_SYNC_SCOPE_EXPORT_RECORDS,
+      label,
+      'scope',
+    );
+  }
+
+  private assertRecordCountWithinLimit(
+    recordCount: number,
+    maxRecords: number,
+    label: string,
+    narrowTarget: string,
+  ) {
+    if (recordCount <= maxRecords) {
+      return;
+    }
+
+    throw new PayloadTooLargeException(
+      [
+        `${label} is too large for synchronous download`,
+        `(${recordCount} records).`,
+        `Narrow the ${narrowTarget} or use a background export flow.`,
+      ].join(' '),
+    );
   }
 
   private countProjectExportRecords(project: ExportSizeProject): number {

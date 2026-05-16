@@ -4,6 +4,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GitHubPullRequestReviewEventPayload } from '../github-payloads';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 import { repositoryProjectWhere } from '../repository-normalization';
+import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
+import { findOrCreateGitHubUser } from '../github-user-resolution';
 
 /**
  * PR Review Handler (spec §7)
@@ -62,7 +64,7 @@ export class PrReviewHandler {
 
     // Find the project
     const project = await this.prisma.project.findFirst({
-      where: repositoryProjectWhere(repository.full_name),
+      where: repositoryProjectWhere(repository.full_name, repository.id),
     });
 
     if (!project) {
@@ -76,6 +78,13 @@ export class PrReviewHandler {
       this.logger.warn(
         `Ignoring pull_request_review ${action} for locked project ${project.id}`,
       );
+      await auditIgnoredLockedWebhook(this.prisma, project, payload.sender, {
+        event: 'pull_request_review',
+        action,
+        repository: repository.full_name,
+        pullRequestNumber: pull_request.number,
+        reviewId: review.id,
+      });
       return;
     }
 
@@ -186,24 +195,10 @@ export class PrReviewHandler {
     login: string,
     avatarUrl?: string,
   ) {
-    let user = await this.prisma.user.findUnique({
-      where: { githubUserId },
+    return findOrCreateGitHubUser(this.prisma, {
+      githubUserId,
+      login,
+      avatarUrl,
     });
-
-    if (!user) {
-      this.logger.log(
-        `Auto-creating user record for GitHub user ${login} (${githubUserId})`,
-      );
-      user = await this.prisma.user.create({
-        data: {
-          githubUserId,
-          githubUsername: login,
-          name: login,
-          avatarUrl: avatarUrl ?? null,
-        },
-      });
-    }
-
-    return user;
   }
 }

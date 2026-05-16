@@ -29,8 +29,15 @@ export class OrganizationsController {
   @Post()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Create a new organization (Admin only)' })
-  async create(@Body() createOrganizationDto: CreateOrganizationDto) {
-    return this.organizationsService.create(createOrganizationDto);
+  async create(
+    @Body() createOrganizationDto: CreateOrganizationDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.organizationsService.create(
+      createOrganizationDto,
+      req.user.id,
+      req.user.roles,
+    );
   }
 
   @Get()
@@ -53,8 +60,14 @@ export class OrganizationsController {
   async update(
     @Param('id') id: string,
     @Body() updateOrganizationDto: UpdateOrganizationDto,
+    @Request() req: RequestWithUser,
   ) {
-    return this.organizationsService.update(id, updateOrganizationDto);
+    return this.organizationsService.update(
+      id,
+      updateOrganizationDto,
+      req.user.id,
+      req.user.roles,
+    );
   }
 
   @Delete(':id')

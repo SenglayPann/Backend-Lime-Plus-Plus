@@ -19,4 +19,13 @@ export class CreateDepartmentDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ApiProperty({
+    example: '7cf8c342-8551-4a62-8dd9-3f6f6c7e6d42',
+    description: 'Optional user ID to assign atomically as department manager',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  manager_user_id?: string;
 }

@@ -174,6 +174,7 @@ describe('DashboardService', () => {
         name: 'Demo University',
         licensePlan: 'academic',
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        userRoles: [{ user: { name: 'Dean', githubUsername: null } }],
         _count: { departments: 1, userRoles: 1 },
       });
       mockPrismaService.department.findMany.mockResolvedValue([
@@ -246,6 +247,7 @@ describe('DashboardService', () => {
       expect(result.departments[0]).toEqual(
         expect.objectContaining({ id: 'dept-1', avgScore: 42 }),
       );
+      expect(result.scope.managers).toEqual(['Dean']);
       expect(result.contributors[0]).toEqual(
         expect.objectContaining({ userId: 'u1', totalScore: 42 }),
       );

@@ -93,6 +93,11 @@ export class WebhooksController {
     const payload = JSON.parse(rawBodyString) as Record<string, unknown>;
     await this.webhooksService.storeDelivery({ event, deliveryId, payload });
 
+    const existingJob = await this.webhookQueue.getJob(deliveryId);
+    if (existingJob && (await existingJob.getState()) === 'failed') {
+      await existingJob.remove();
+    }
+
     // 7. Enqueue to async job queue (spec §3 pipeline step)
     await this.webhookQueue.add(
       'process-webhook',

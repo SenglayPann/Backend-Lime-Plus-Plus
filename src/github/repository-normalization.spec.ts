@@ -16,4 +16,18 @@ describe('repository normalization', () => {
       },
     });
   });
+
+  it('matches GitHub repository ID before name fallback when available', () => {
+    expect(repositoryProjectWhere('Owner/Renamed', 123)).toEqual({
+      OR: [
+        { githubRepositoryId: '123' },
+        {
+          repository: {
+            equals: 'owner/renamed',
+            mode: 'insensitive',
+          },
+        },
+      ],
+    });
+  });
 });

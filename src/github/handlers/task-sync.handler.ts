@@ -8,6 +8,8 @@ import {
   GitHubProjectV2ItemPayload,
   GitHubUserPayload,
 } from '../github-payloads';
+import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
+import { findOrCreateGitHubUser } from '../github-user-resolution';
 
 /**
  * Task Sync Handler (spec §8)
@@ -66,6 +68,12 @@ export class TaskSyncHandler {
       this.logger.warn(
         `Ignoring projects_v2_item ${action} for locked project ${project.id}`,
       );
+      await auditIgnoredLockedWebhook(this.prisma, project, sender, {
+        event: 'projects_v2_item',
+        action,
+        projectNodeId,
+        itemNodeId: projects_v2_item.node_id,
+      });
       return;
     }
 
@@ -400,25 +408,11 @@ export class TaskSyncHandler {
     login: string,
     avatarUrl?: string,
   ) {
-    let user = await this.prisma.user.findUnique({
-      where: { githubUserId },
+    return findOrCreateGitHubUser(this.prisma, {
+      githubUserId,
+      login,
+      avatarUrl,
     });
-
-    if (!user) {
-      this.logger.log(
-        `Auto-creating user record for GitHub user ${login} (${githubUserId})`,
-      );
-      user = await this.prisma.user.create({
-        data: {
-          githubUserId,
-          githubUsername: login,
-          name: login,
-          avatarUrl: avatarUrl ?? null,
-        },
-      });
-    }
-
-    return user;
   }
 
   private async resolveTaskAssignee(
