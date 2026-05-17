@@ -259,37 +259,78 @@ export class DepartmentsService {
         throw error;
       }
 
-      if (dto.manager_user_id) {
-        const existingRole = await tx.userRole.findFirst({
+      if (dto.manager_user_id !== undefined) {
+        const currentManagers = await tx.userRole.findMany({
           where: {
-            userId: dto.manager_user_id,
             role: PrismaRole.DEPARTMENT_MANAGER,
             departmentId: id,
           },
-          select: { id: true },
         });
 
-        if (!existingRole) {
-          await tx.userRole.create({
-            data: {
-              userId: dto.manager_user_id,
-              role: PrismaRole.DEPARTMENT_MANAGER,
-              departmentId: id,
-            },
-          });
+        const targetUserId = dto.manager_user_id === '' ? null : dto.manager_user_id;
 
-          await tx.auditLog.create({
-            data: {
-              action: AuditAction.ROLE_CHANGE,
-              actorId,
-              metadata: {
-                operation: 'assign',
-                targetUserId: dto.manager_user_id,
+        if (!targetUserId) {
+          // Unassign all managers
+          for (const manager of currentManagers) {
+            await tx.userRole.delete({ where: { id: manager.id } });
+            await tx.auditLog.create({
+              data: {
+                action: AuditAction.ROLE_CHANGE,
+                actorId,
+                metadata: {
+                  operation: 'remove',
+                  targetUserId: manager.userId,
+                  role: PrismaRole.DEPARTMENT_MANAGER,
+                  departmentId: id,
+                },
+              },
+            });
+          }
+        } else {
+          // Swap: remove all other managers, assign the new one if not present
+          let alreadyAssigned = false;
+          for (const manager of currentManagers) {
+            if (manager.userId !== targetUserId) {
+              await tx.userRole.delete({ where: { id: manager.id } });
+              await tx.auditLog.create({
+                data: {
+                  action: AuditAction.ROLE_CHANGE,
+                  actorId,
+                  metadata: {
+                    operation: 'remove',
+                    targetUserId: manager.userId,
+                    role: PrismaRole.DEPARTMENT_MANAGER,
+                    departmentId: id,
+                  },
+                },
+              });
+            } else {
+              alreadyAssigned = true;
+            }
+          }
+
+          if (!alreadyAssigned) {
+            await tx.userRole.create({
+              data: {
+                userId: targetUserId,
                 role: PrismaRole.DEPARTMENT_MANAGER,
                 departmentId: id,
               },
-            },
-          });
+            });
+
+            await tx.auditLog.create({
+              data: {
+                action: AuditAction.ROLE_CHANGE,
+                actorId,
+                metadata: {
+                  operation: 'assign',
+                  targetUserId,
+                  role: PrismaRole.DEPARTMENT_MANAGER,
+                  departmentId: id,
+                },
+              },
+            });
+          }
         }
       }
 
