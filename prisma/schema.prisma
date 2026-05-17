@@ -320,6 +320,7 @@ model RefreshToken {
   id                String    @id
   tokenHash         String    @unique @map("token_hash")
   userId            String    @map("user_id")
+  browserId         String?   @map("browser_id")
   expiresAt         DateTime  @map("expires_at")
   revokedAt         DateTime? @map("revoked_at")
   replacedByTokenId String?   @map("replaced_by_token_id")
@@ -330,5 +331,6 @@ model RefreshToken {
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([browserId])
   @@map("refresh_tokens")
 }

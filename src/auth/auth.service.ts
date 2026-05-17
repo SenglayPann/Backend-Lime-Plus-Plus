@@ -16,6 +16,7 @@ export interface TokenResponse {
 export interface TokenMetadata {
   userAgent?: string;
   ipAddress?: string;
+  browserId?: string;
 }
 
 export interface UserWithRoles {
@@ -121,6 +122,7 @@ export class AuthService {
         id: refreshTokenRecord.id,
         tokenHash: this.hashToken(refreshToken),
         userId: user.id,
+        browserId: metadata.browserId,
         expiresAt: refreshTokenRecord.expiresAt,
         userAgent: metadata.userAgent,
         ipAddress: metadata.ipAddress,
@@ -214,9 +216,10 @@ export class AuthService {
             id: newRefreshTokenRecord.id,
             tokenHash: this.hashToken(newRefreshToken),
             userId: user.id,
+            browserId: metadata.browserId || existingToken.browserId,
             expiresAt: newRefreshTokenRecord.expiresAt,
-            userAgent: metadata.userAgent,
-            ipAddress: metadata.ipAddress,
+            userAgent: metadata.userAgent || existingToken.userAgent,
+            ipAddress: metadata.ipAddress || existingToken.ipAddress,
           },
         }),
       ]);
@@ -252,6 +255,69 @@ export class AuthService {
     } catch {
       return;
     }
+  }
+
+  async getLinkedAccounts(browserId: string) {
+    if (!browserId) return [];
+
+    const activeTokens = await this.prisma.refreshToken.findMany({
+      where: {
+        browserId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: {
+        userId: true,
+      },
+      distinct: ['userId'],
+    });
+
+    const userIds = activeTokens.map((t) => t.userId);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+      },
+    });
+
+    const accounts = await Promise.all(
+      users.map(async (user) => {
+        const roles = await this.usersService.getUserRoles(user.id);
+        return { ...user, roles };
+      }),
+    );
+
+    return accounts;
+  }
+
+  async switchAccount(
+    browserId: string,
+    targetUserId: string,
+    metadata: TokenMetadata = {},
+  ): Promise<TokenResponse | null> {
+    if (!browserId) return null;
+
+    // Verify the target user has an active session on this browser
+    const activeToken = await this.prisma.refreshToken.findFirst({
+      where: {
+        browserId,
+        userId: targetUserId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!activeToken) {
+      return null;
+    }
+
+    const user = await this.getCurrentUserForTokens(targetUserId);
+    if (!user) return null;
+
+    return this.login(user, { ...metadata, browserId });
   }
 
   private async revokeRefreshTokenChain(startTokenId: string): Promise<void> {

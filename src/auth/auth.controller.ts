@@ -9,6 +9,10 @@ import {
   UnauthorizedException,
   HttpCode,
   HttpStatus,
+  Query,
+  Injectable,
+  ExecutionContext,
+  Logger,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
@@ -20,6 +24,38 @@ import { CurrentUser } from '../common/decorators';
 import { ConfigService } from '@nestjs/config';
 import type { RequestWithUser } from '../common/types/request.interface';
 
+@Injectable()
+export class GitHubPopupGuard extends AuthGuard('github') {
+  getAuthenticateOptions(context: ExecutionContext) {
+    const request = context.switchToHttp().getRequest();
+    const mode = request.query.mode;
+
+    const options: any = {
+      scope: ['user:email', 'repo', 'read:project'],
+    };
+
+    if (mode === 'popup') {
+      options.state = 'mode:popup';
+      options.prompt = 'consent';
+    }
+
+    return options;
+  }
+}
+
+/**
+ * Custom guard to preserve the 'state' parameter before Passport consumes it
+ */
+@Injectable()
+export class GitHubCallbackGuard extends AuthGuard('github') {
+  async canActivate(context: ExecutionContext) {
+    const request = context.switchToHttp().getRequest();
+    // Preserve state on the request object
+    (request as any).oauthState = request.query.state;
+    return (await super.canActivate(context)) as boolean;
+  }
+}
+
 interface RefreshTokenDto {
   refreshToken: string;
 }
@@ -28,8 +64,14 @@ interface ExchangeCodeDto {
   code: string;
 }
 
+interface SwitchAccountDto {
+  targetUserId: string;
+}
+
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
@@ -40,8 +82,8 @@ export class AuthController {
    * Initiates GitHub OAuth flow
    */
   @Get('github')
-  @UseGuards(AuthGuard('github'))
-  githubLogin() {
+  @UseGuards(GitHubPopupGuard)
+  async githubLogin() {
     // Guard redirects to GitHub
   }
 
@@ -49,14 +91,24 @@ export class AuthController {
    * Handles GitHub OAuth callback
    */
   @Get('github/callback')
-  @UseGuards(AuthGuard('github'))
+  @UseGuards(GitHubCallbackGuard)
   async githubCallback(@Req() req: RequestWithUser, @Res() res: Response) {
     const code = await this.authService.createHandoffCode(req.user.id);
+    
+    // Check preserved state
+    const state = (req as any).oauthState || req.query.state as string;
+    const isPopup = state && state.includes('mode:popup');
+
+    this.logger.log(`GitHub callback processed. Preserved State: ${state}, isPopup: ${isPopup}`);
 
     const frontendUrl =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
 
-    res.redirect(`${frontendUrl}/auth/callback?code=${code}`);
+    if (isPopup) {
+      res.redirect(`${frontendUrl}/auth/callback?code=${code}&mode=popup`);
+    } else {
+      res.redirect(`${frontendUrl}/auth/callback?code=${code}`);
+    }
   }
 
   /**
@@ -72,6 +124,7 @@ export class AuthController {
     const tokens = await this.authService.exchangeHandoffCode(body.code, {
       userAgent: req.get('user-agent') || undefined,
       ipAddress: req.ip,
+      browserId: (req.headers['x-browser-id'] as string) || undefined,
     });
 
     if (!tokens) {
@@ -94,6 +147,7 @@ export class AuthController {
     const tokens = await this.authService.refreshToken(body.refreshToken, {
       userAgent: req.get('user-agent') || undefined,
       ipAddress: req.ip,
+      browserId: (req.headers['x-browser-id'] as string) || undefined,
     });
 
     if (!tokens) {
@@ -104,8 +158,7 @@ export class AuthController {
   }
 
   /**
-   * Logout - revoke the active refresh token when supplied.
-   * Access tokens remain short-lived; clients should discard them locally.
+   * Logout
    */
   @Post('logout')
   @HttpCode(HttpStatus.OK)
@@ -113,7 +166,6 @@ export class AuthController {
     if (body.refreshToken) {
       await this.authService.revokeRefreshToken(body.refreshToken);
     }
-
     return { message: 'Logged out successfully' };
   }
 
@@ -124,5 +176,46 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async getProfile(@CurrentUser() user: RequestWithUser['user']) {
     return this.usersService.getUserProfileWithScopes(user.id);
+  }
+
+  /**
+   * Get all accounts linked to this browser
+   */
+  @Get('accounts')
+  async getAccounts(@Req() req: any) {
+    const browserId = req.headers['x-browser-id'] as string;
+    if (!browserId) return [];
+    return this.authService.getLinkedAccounts(browserId);
+  }
+
+  /**
+   * Securely switch to another linked account
+   */
+  @Post('switch')
+  @HttpCode(HttpStatus.OK)
+  async switch(
+    @Req() req: any,
+    @Body() body: SwitchAccountDto,
+  ): Promise<TokenResponse> {
+    const browserId = req.headers['x-browser-id'] as string;
+    if (!browserId) {
+      throw new UnauthorizedException('Missing browser identifier');
+    }
+
+    const tokens = await this.authService.switchAccount(
+      browserId,
+      body.targetUserId,
+      {
+        userAgent: req.get('user-agent') || undefined,
+        ipAddress: req.ip,
+        browserId,
+      },
+    );
+
+    if (!tokens) {
+      throw new UnauthorizedException('Account switch not authorized');
+    }
+
+    return tokens;
   }
 }
