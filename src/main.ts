@@ -8,6 +8,11 @@ import { TransformInterceptor } from './common/interceptors';
 import { HttpExceptionFilter } from './common/filters';
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
+type CorsOriginCallback = (error: Error | null, allow?: boolean) => void;
+
+const LOCAL_DEVELOPMENT_ORIGIN =
+  /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
+const ENABLED_ENV_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
 function captureRawBody(req: RequestWithRawBody, _res: Response, buf: Buffer) {
   if (buf.length > 0) {
@@ -20,15 +25,37 @@ function resolveCorsOrigin(isProduction: boolean) {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const allowLocalDevelopmentOrigins =
+    !isProduction &&
+    ENABLED_ENV_VALUES.has(
+      (process.env.CORS_ALLOW_LOCAL_DEV_ORIGINS || '').toLowerCase(),
+    );
 
   if (configuredOrigins.length === 0) {
     if (isProduction) {
       throw new Error('FRONTEND_URL must be configured in production');
     }
-    return 'http://localhost:3000';
+    configuredOrigins.push('http://localhost:3000');
   }
 
-  return configuredOrigins.length === 1 ? configuredOrigins[0] : configuredOrigins;
+  const allowedOrigins = new Set(configuredOrigins);
+
+  return (origin: string | undefined, callback: CorsOriginCallback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (
+      allowedOrigins.has(origin) ||
+      (allowLocalDevelopmentOrigins && LOCAL_DEVELOPMENT_ORIGIN.test(origin))
+    ) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS origin not allowed: ${origin}`), false);
+  };
 }
 
 async function bootstrap() {
@@ -95,7 +122,16 @@ async function bootstrap() {
   app.enableCors({
     origin: resolveCorsOrigin(isProduction),
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Browser-Id'],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Accept',
+      'Content-Type',
+      'Authorization',
+      'X-Browser-Id',
+      'X-GitHub-Token',
+      'x-github-token',
+    ],
+    optionsSuccessStatus: 204,
   });
 
   await app.listen(process.env.PORT ?? 3001);
