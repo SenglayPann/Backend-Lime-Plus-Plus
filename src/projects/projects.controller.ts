@@ -53,14 +53,21 @@ export class ProjectsController {
   @Roles(Role.PROJECT_MEMBER)
   @ApiOperation({ summary: 'List accessible projects (Project Member+)' })
   @ApiQuery({ name: 'department_id', required: false })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search by project, repository, department, organization, or status',
+  })
   async findAll(
     @Query('department_id') departmentId: string | undefined,
+    @Query('search') search: string | undefined,
     @Request() req: RequestWithUser,
   ) {
     return this.projectsService.findAll(
       departmentId,
       req.user.id,
       req.user.roles,
+      search,
     );
   }
 

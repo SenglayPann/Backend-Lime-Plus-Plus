@@ -6,10 +6,16 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { OrganizationsService } from './organizations.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -43,8 +49,20 @@ export class OrganizationsController {
   @Get()
   @Roles(Role.PROJECT_MEMBER)
   @ApiOperation({ summary: 'List accessible organizations' })
-  async findAll(@Request() req: RequestWithUser) {
-    return this.organizationsService.findAll(req.user.id, req.user.roles);
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search by organization name, license plan, or manager',
+  })
+  async findAll(
+    @Query('search') search: string | undefined,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.organizationsService.findAll(
+      req.user.id,
+      req.user.roles,
+      search,
+    );
   }
 
   @Get(':id')

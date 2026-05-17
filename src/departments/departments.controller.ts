@@ -54,14 +54,21 @@ export class DepartmentsController {
     required: false,
     description: 'Filter by organization ID',
   })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search by department, organization, description, or manager',
+  })
   async findAll(
     @Query('organization_id') organizationId: string | undefined,
+    @Query('search') search: string | undefined,
     @Request() req: RequestWithUser,
   ) {
     return this.departmentsService.findAll(
       req.user.id,
       req.user.roles,
       organizationId,
+      search,
     );
   }
 

@@ -6,7 +6,7 @@ import { OrganizationAccessService } from '../common/access/organization-access.
 import { DepartmentAccessService } from '../common/access/department-access.service';
 import { RoleDelegationService } from '../common/access/role-delegation.service';
 import { safeUserSelect } from '../common/serialization/safe-user-select';
-import { AuditAction, Role as PrismaRole } from '../generated/prisma';
+import { AuditAction, Prisma, Role as PrismaRole } from '../generated/prisma';
 import type { Role } from '../common/decorators/roles.decorator';
 
 @Injectable()
@@ -62,12 +62,18 @@ export class OrganizationsService {
     });
   }
 
-  async findAll(actorId: string, actorRoles: Role[]) {
-    return this.prisma.organization.findMany({
-      where: this.organizationAccessService.buildAccessibleOrganizationWhere(
+  async findAll(actorId: string, actorRoles: Role[], search?: string) {
+    const accessibleWhere =
+      this.organizationAccessService.buildAccessibleOrganizationWhere(
         actorId,
         actorRoles,
-      ),
+      );
+    const searchWhere = this.buildOrganizationSearchWhere(search);
+
+    return this.prisma.organization.findMany({
+      where: searchWhere
+        ? { AND: [accessibleWhere, searchWhere] }
+        : accessibleWhere,
       include: {
         userRoles: {
           where: { role: PrismaRole.ORGANIZATION_MANAGER },
@@ -81,6 +87,37 @@ export class OrganizationsService {
         },
       },
     });
+  }
+
+  private buildOrganizationSearchWhere(
+    search?: string,
+  ): Prisma.OrganizationWhereInput | undefined {
+    const term = search?.trim();
+    if (!term) return undefined;
+
+    const contains = { contains: term, mode: Prisma.QueryMode.insensitive };
+    const userNameSearch: Prisma.UserWhereInput = {
+      OR: [
+        { name: contains },
+        { email: contains },
+        { githubUsername: contains },
+      ],
+    };
+
+    return {
+      OR: [
+        { name: contains },
+        { licensePlan: contains },
+        {
+          userRoles: {
+            some: {
+              role: PrismaRole.ORGANIZATION_MANAGER,
+              user: userNameSearch,
+            },
+          },
+        },
+      ],
+    };
   }
 
   async findOne(id: string, actorId: string, actorRoles: Role[]) {

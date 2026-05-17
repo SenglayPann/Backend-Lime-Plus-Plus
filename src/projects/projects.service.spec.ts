@@ -22,7 +22,7 @@ describe('ProjectsService project membership', () => {
     scoreOverride: { count: jest.fn() },
     contributionEvent: { count: jest.fn() },
     user: { findUnique: jest.fn(), findFirst: jest.fn() },
-    project: { findFirst: jest.fn(), create: jest.fn() },
+    project: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn() },
     auditLog: { create: jest.fn() },
   };
   const githubService = {
@@ -36,6 +36,7 @@ describe('ProjectsService project membership', () => {
     assertCanManageProject: jest.fn(),
     assertCanViewProject: jest.fn(),
     assertCanCreateProjectInDepartment: jest.fn(),
+    buildAccessibleProjectWhere: jest.fn(),
     buildManageableProjectWhere: jest.fn(),
   };
   const projectLockGuard = {
@@ -69,6 +70,9 @@ describe('ProjectsService project membership', () => {
     projectLockGuard.assertMutable.mockReturnValue(undefined);
     roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
     userVisibilityService.buildVisibleUserWhere.mockReturnValue({});
+    projectAccessService.buildAccessibleProjectWhere.mockReturnValue({
+      id: 'visible',
+    });
     projectAccessService.buildManageableProjectWhere.mockReturnValue({});
     githubService.getRepositoryInfo.mockResolvedValue({
       id: 'repo-1',
@@ -81,6 +85,7 @@ describe('ProjectsService project membership', () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
     prisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
     prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
+    prisma.project.findMany.mockResolvedValue([]);
     prisma.project.create.mockResolvedValue({ id: 'project-1' });
     prisma.projectMember.findUnique.mockResolvedValue(null);
     prisma.projectMember.upsert.mockResolvedValue({ id: 'member-1' });
@@ -92,6 +97,47 @@ describe('ProjectsService project membership', () => {
     prisma.scoreOverride.count.mockResolvedValue(0);
     prisma.contributionEvent.count.mockResolvedValue(0);
     prisma.auditLog.create.mockResolvedValue({});
+  });
+
+  it('combines project search with scoped access filter', async () => {
+    await service.findAll('dept-1', 'actor', ['PROJECT_MEMBER'], 'locked');
+
+    expect(projectAccessService.buildAccessibleProjectWhere).toHaveBeenCalledWith(
+      'actor',
+      ['PROJECT_MEMBER'],
+      'dept-1',
+    );
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { id: 'visible' },
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                {
+                  name: {
+                    contains: 'locked',
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  repository: {
+                    contains: 'locked',
+                    mode: 'insensitive',
+                  },
+                },
+                expect.objectContaining({
+                  department: expect.objectContaining({
+                    OR: expect.any(Array),
+                  }),
+                }),
+                { status: { in: ['LOCKED'] } },
+              ]),
+            }),
+          ],
+        },
+      }),
+    );
   });
 
   describe('create', () => {

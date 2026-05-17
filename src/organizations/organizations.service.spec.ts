@@ -147,6 +147,45 @@ describe('OrganizationsService', () => {
     });
   });
 
+  it('combines organization search with scoped access filter', async () => {
+    prisma.organization.findMany.mockResolvedValue([]);
+
+    await service.findAll('actor', ['ORGANIZATION_MANAGER'], 'Grace');
+
+    expect(prisma.organization.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { id: 'visible' },
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                {
+                  name: {
+                    contains: 'Grace',
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  licensePlan: {
+                    contains: 'Grace',
+                    mode: 'insensitive',
+                  },
+                },
+                expect.objectContaining({
+                  userRoles: expect.objectContaining({
+                    some: expect.objectContaining({
+                      role: 'ORGANIZATION_MANAGER',
+                    }),
+                  }),
+                }),
+              ]),
+            }),
+          ],
+        },
+      }),
+    );
+  });
+
   it('updates organization fields with license plan mapping', async () => {
     prisma.organization.update.mockResolvedValue({ id: 'org-1' });
     prisma.organization.findUnique.mockResolvedValue({ id: 'org-1' });

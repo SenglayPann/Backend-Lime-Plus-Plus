@@ -210,18 +210,57 @@ export class ProjectsService {
     departmentId: string | undefined,
     actorId: string,
     actorRoles: Role[],
+    search?: string,
   ) {
+    const accessibleWhere = this.projectAccessService.buildAccessibleProjectWhere(
+      actorId,
+      actorRoles,
+      departmentId,
+    );
+    const searchWhere = this.buildProjectSearchWhere(search);
+
     return this.prisma.project.findMany({
-      where: this.projectAccessService.buildAccessibleProjectWhere(
-        actorId,
-        actorRoles,
-        departmentId,
-      ),
+      where: searchWhere
+        ? { AND: [accessibleWhere, searchWhere] }
+        : accessibleWhere,
       include: {
-        department: true,
+        department: { include: { organization: true } },
         _count: { select: { members: true } },
       },
     });
+  }
+
+  private buildProjectSearchWhere(
+    search?: string,
+  ): Prisma.ProjectWhereInput | undefined {
+    const term = search?.trim();
+    if (!term) return undefined;
+
+    const contains = { contains: term, mode: Prisma.QueryMode.insensitive };
+    const normalized = term.toLowerCase();
+    const matchingStatuses = Object.values(ProjectStatus).filter((status) =>
+      status.toLowerCase().includes(normalized),
+    );
+    const clauses: Prisma.ProjectWhereInput[] = [
+      { name: contains },
+      { repository: contains },
+      { externalProjectId: contains },
+      { githubRepositoryId: contains },
+      {
+        department: {
+          OR: [
+            { name: contains },
+            { organization: { name: contains } },
+          ],
+        },
+      },
+    ];
+
+    if (matchingStatuses.length > 0) {
+      clauses.push({ status: { in: matchingStatuses } });
+    }
+
+    return { OR: clauses };
   }
 
   async findOne(id: string, actorId: string, actorRoles: Role[]) {

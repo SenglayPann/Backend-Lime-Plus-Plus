@@ -75,13 +75,24 @@ export class DepartmentsService {
     });
   }
 
-  async findAll(actorId: string, actorRoles: Role[], organizationId?: string) {
-    return this.prisma.department.findMany({
-      where: this.departmentAccessService.buildAccessibleDepartmentWhere(
+  async findAll(
+    actorId: string,
+    actorRoles: Role[],
+    organizationId?: string,
+    search?: string,
+  ) {
+    const accessibleWhere =
+      this.departmentAccessService.buildAccessibleDepartmentWhere(
         actorId,
         actorRoles,
         organizationId,
-      ),
+      );
+    const searchWhere = this.buildDepartmentSearchWhere(search);
+
+    return this.prisma.department.findMany({
+      where: searchWhere
+        ? { AND: [accessibleWhere, searchWhere] }
+        : accessibleWhere,
       include: {
         organization: true,
         userRoles: {
@@ -93,6 +104,38 @@ export class DepartmentsService {
         },
       },
     });
+  }
+
+  private buildDepartmentSearchWhere(
+    search?: string,
+  ): Prisma.DepartmentWhereInput | undefined {
+    const term = search?.trim();
+    if (!term) return undefined;
+
+    const contains = { contains: term, mode: Prisma.QueryMode.insensitive };
+    const userNameSearch: Prisma.UserWhereInput = {
+      OR: [
+        { name: contains },
+        { email: contains },
+        { githubUsername: contains },
+      ],
+    };
+
+    return {
+      OR: [
+        { name: contains },
+        { description: contains },
+        { organization: { name: contains } },
+        {
+          userRoles: {
+            some: {
+              role: PrismaRole.DEPARTMENT_MANAGER,
+              user: userNameSearch,
+            },
+          },
+        },
+      ],
+    };
   }
 
   async findOne(id: string, actorId: string, actorRoles: Role[]) {

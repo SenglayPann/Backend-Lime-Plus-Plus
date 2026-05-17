@@ -186,6 +186,56 @@ describe('DepartmentsService', () => {
     });
   });
 
+  it('combines department search with scoped access filter', async () => {
+    prisma.department.findMany.mockResolvedValue([]);
+
+    await service.findAll('actor', ['ORGANIZATION_MANAGER'], 'org-1', 'Ada');
+
+    expect(
+      departmentAccessService.buildAccessibleDepartmentWhere,
+    ).toHaveBeenCalledWith('actor', ['ORGANIZATION_MANAGER'], 'org-1');
+    expect(prisma.department.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { id: 'visible' },
+            expect.objectContaining({
+              OR: expect.arrayContaining([
+                {
+                  name: {
+                    contains: 'Ada',
+                    mode: 'insensitive',
+                  },
+                },
+                {
+                  description: {
+                    contains: 'Ada',
+                    mode: 'insensitive',
+                  },
+                },
+                expect.objectContaining({
+                  organization: expect.objectContaining({
+                    name: {
+                      contains: 'Ada',
+                      mode: 'insensitive',
+                    },
+                  }),
+                }),
+                expect.objectContaining({
+                  userRoles: expect.objectContaining({
+                    some: expect.objectContaining({
+                      role: 'DEPARTMENT_MANAGER',
+                    }),
+                  }),
+                }),
+              ]),
+            }),
+          ],
+        },
+      }),
+    );
+  });
+
   it('checks target organization permission when moving a department', async () => {
     prisma.department.update.mockResolvedValue({ id: 'dept-1' });
     prisma.department.findUnique
