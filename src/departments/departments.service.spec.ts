@@ -10,6 +10,7 @@ describe('DepartmentsService', () => {
     $transaction: jest.fn(),
     department: {
       create: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -45,12 +46,51 @@ describe('DepartmentsService', () => {
       id: 'project-visible',
     });
     roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
+    prisma.department.findFirst.mockResolvedValue(null);
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
     service = new DepartmentsService(
       prisma as any,
       departmentAccessService as any,
       projectAccessService as any,
       roleDelegationService as any,
+    );
+  });
+
+  it('rejects duplicate department names in the same organization before creating', async () => {
+    prisma.department.findFirst.mockResolvedValueOnce({ id: 'dept-existing' });
+
+    await expect(
+      service.create(
+        {
+          name: 'Computer Science',
+          organization_id: 'org-1',
+          description: 'CS',
+        },
+        'actor',
+        ['ORGANIZATION_MANAGER'],
+      ),
+    ).rejects.toThrow(
+      'A department with this name already exists in this organization',
+    );
+
+    expect(prisma.department.create).not.toHaveBeenCalled();
+  });
+
+  it('returns a conflict if the department name unique index is hit during create', async () => {
+    prisma.department.create.mockRejectedValueOnce({ code: 'P2002' });
+
+    await expect(
+      service.create(
+        {
+          name: 'Computer Science',
+          organization_id: 'org-1',
+          description: 'CS',
+        },
+        'actor',
+        ['ORGANIZATION_MANAGER'],
+      ),
+    ).rejects.toThrow(
+      'A department with this name already exists in this organization',
     );
   });
 
@@ -236,10 +276,36 @@ describe('DepartmentsService', () => {
     );
   });
 
+  it('rejects renaming a department to a duplicate name in the target organization', async () => {
+    prisma.department.findUnique.mockResolvedValue({
+      id: 'dept-1',
+      organizationId: 'org-1',
+      name: 'Software Engineering',
+    });
+    prisma.department.findFirst.mockResolvedValueOnce({ id: 'dept-existing' });
+
+    await expect(
+      service.update(
+        'dept-1',
+        { name: 'Computer Science' },
+        'actor',
+        ['ORGANIZATION_MANAGER'],
+      ),
+    ).rejects.toThrow(
+      'A department with this name already exists in this organization',
+    );
+
+    expect(prisma.department.update).not.toHaveBeenCalled();
+  });
+
   it('checks target organization permission when moving a department', async () => {
     prisma.department.update.mockResolvedValue({ id: 'dept-1' });
     prisma.department.findUnique
-      .mockResolvedValueOnce({ id: 'dept-1', organizationId: 'org-1' })
+      .mockResolvedValueOnce({
+        id: 'dept-1',
+        organizationId: 'org-1',
+        name: 'Computer Science',
+      })
       .mockResolvedValueOnce({ id: 'dept-1' });
 
     await service.update(
@@ -267,7 +333,11 @@ describe('DepartmentsService', () => {
 
   it('adds the selected department manager while updating department fields', async () => {
     prisma.department.findUnique
-      .mockResolvedValueOnce({ id: 'dept-1', organizationId: 'org-1' })
+      .mockResolvedValueOnce({
+        id: 'dept-1',
+        organizationId: 'org-1',
+        name: 'Computer Science',
+      })
       .mockResolvedValueOnce({ id: 'dept-1' });
     prisma.department.update.mockResolvedValue({ id: 'dept-1' });
     prisma.user.findUnique.mockResolvedValue({ id: 'manager-2' });
@@ -326,6 +396,7 @@ describe('DepartmentsService', () => {
     prisma.department.findUnique.mockResolvedValue({
       id: 'dept-1',
       organizationId: 'org-1',
+      name: 'Computer Science',
     });
     departmentAccessService.assertCanCreateDepartment.mockRejectedValueOnce(
       new ForbiddenException('You do not have permission to create departments'),

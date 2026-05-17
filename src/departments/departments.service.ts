@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -30,6 +31,9 @@ export class DepartmentsService {
       dto.organization_id,
     );
 
+    const name = this.normalizeRequiredName(dto.name, 'Department name');
+    await this.assertDepartmentNameAvailable(dto.organization_id, name);
+
     if (dto.manager_user_id) {
       await this.assertDepartmentManagerTargetCanBeAssigned(
         dto.manager_user_id,
@@ -40,13 +44,25 @@ export class DepartmentsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const department = await tx.department.create({
-        data: {
-          name: dto.name,
-          organizationId: dto.organization_id,
-          description: dto.description,
-        },
-      });
+      const department = await (async () => {
+        try {
+          return await tx.department.create({
+            data: {
+              name,
+              organizationId: dto.organization_id,
+              description: dto.description,
+            },
+          });
+        } catch (error) {
+          if (this.isUniqueConstraintError(error)) {
+            throw new ConflictException(
+              'A department with this name already exists in this organization',
+            );
+          }
+
+          throw error;
+        }
+      })();
 
       if (dto.manager_user_id) {
         await tx.userRole.create({
@@ -186,7 +202,7 @@ export class DepartmentsService {
 
     const currentDepartment = await this.prisma.department.findUnique({
       where: { id },
-      select: { id: true, organizationId: true },
+      select: { id: true, organizationId: true, name: true },
     });
 
     if (!currentDepartment) {
@@ -195,6 +211,19 @@ export class DepartmentsService {
 
     const targetOrganizationId =
       dto.organization_id ?? currentDepartment.organizationId;
+    const name =
+      dto.name !== undefined
+        ? this.normalizeRequiredName(dto.name, 'Department name')
+        : undefined;
+    const targetDepartmentName = name ?? currentDepartment.name;
+
+    if (name !== undefined || dto.organization_id !== undefined) {
+      await this.assertDepartmentNameAvailable(
+        targetOrganizationId,
+        targetDepartmentName,
+        id,
+      );
+    }
 
     if (dto.manager_user_id) {
       await this.departmentAccessService.assertCanCreateDepartment(
@@ -211,14 +240,24 @@ export class DepartmentsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.department.update({
-        where: { id },
-        data: {
-          name: dto.name,
-          organizationId: dto.organization_id,
-          description: dto.description,
-        },
-      });
+      try {
+        await tx.department.update({
+          where: { id },
+          data: {
+            name,
+            organizationId: dto.organization_id,
+            description: dto.description,
+          },
+        });
+      } catch (error) {
+        if (this.isUniqueConstraintError(error)) {
+          throw new ConflictException(
+            'A department with this name already exists in this organization',
+          );
+        }
+
+        throw error;
+      }
 
       if (dto.manager_user_id) {
         const existingRole = await tx.userRole.findFirst({
@@ -372,5 +411,43 @@ export class DepartmentsService {
         },
       ],
     };
+  }
+
+  private normalizeRequiredName(name: string, label: string) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new BadRequestException(`${label} cannot be empty`);
+    }
+
+    return trimmed;
+  }
+
+  private async assertDepartmentNameAvailable(
+    organizationId: string,
+    name: string,
+    excludeDepartmentId?: string,
+  ) {
+    const existingDepartment = await this.prisma.department.findFirst({
+      where: {
+        organizationId,
+        name: { equals: name, mode: Prisma.QueryMode.insensitive },
+        ...(excludeDepartmentId ? { id: { not: excludeDepartmentId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (existingDepartment) {
+      throw new ConflictException(
+        'A department with this name already exists in this organization',
+      );
+    }
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      Boolean(error) &&
+      typeof error === 'object' &&
+      (error as { code?: unknown }).code === 'P2002'
+    );
   }
 }

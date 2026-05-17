@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -19,6 +24,9 @@ export class OrganizationsService {
   ) {}
 
   async create(dto: CreateOrganizationDto, actorId: string, actorRoles: Role[]) {
+    const name = this.normalizeRequiredName(dto.name, 'Organization name');
+    await this.assertOrganizationNameAvailable(name);
+
     if (dto.manager_user_id) {
       await this.assertOrganizationManagerTargetCanBeAssigned(
         dto.manager_user_id,
@@ -28,12 +36,24 @@ export class OrganizationsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const organization = await tx.organization.create({
-        data: {
-          name: dto.name,
-          licensePlan: dto.license_plan,
-        },
-      });
+      const organization = await (async () => {
+        try {
+          return await tx.organization.create({
+            data: {
+              name,
+              licensePlan: dto.license_plan,
+            },
+          });
+        } catch (error) {
+          if (this.isUniqueConstraintError(error)) {
+            throw new ConflictException(
+              'An organization with this name already exists',
+            );
+          }
+
+          throw error;
+        }
+      })();
 
       if (dto.manager_user_id) {
         await tx.userRole.create({
@@ -151,6 +171,15 @@ export class OrganizationsService {
     actorId: string,
     actorRoles: Role[],
   ) {
+    const name =
+      dto.name !== undefined
+        ? this.normalizeRequiredName(dto.name, 'Organization name')
+        : undefined;
+
+    if (name !== undefined) {
+      await this.assertOrganizationNameAvailable(name, id);
+    }
+
     if (dto.manager_user_id) {
       await this.assertOrganizationManagerTargetCanBeAssigned(
         dto.manager_user_id,
@@ -160,13 +189,23 @@ export class OrganizationsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.organization.update({
-        where: { id },
-        data: {
-          name: dto.name,
-          licensePlan: dto.license_plan,
-        },
-      });
+      try {
+        await tx.organization.update({
+          where: { id },
+          data: {
+            name,
+            licensePlan: dto.license_plan,
+          },
+        });
+      } catch (error) {
+        if (this.isUniqueConstraintError(error)) {
+          throw new ConflictException(
+            'An organization with this name already exists',
+          );
+        }
+
+        throw error;
+      }
 
       if (dto.manager_user_id) {
         const existingRole = await tx.userRole.findFirst({
@@ -269,6 +308,44 @@ export class OrganizationsService {
       actorId,
       actorRoles,
       targetUserId,
+    );
+  }
+
+  private normalizeRequiredName(name: string, label: string) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new BadRequestException(`${label} cannot be empty`);
+    }
+
+    return trimmed;
+  }
+
+  private async assertOrganizationNameAvailable(
+    name: string,
+    excludeOrganizationId?: string,
+  ) {
+    const existingOrganization = await this.prisma.organization.findFirst({
+      where: {
+        name: { equals: name, mode: Prisma.QueryMode.insensitive },
+        ...(excludeOrganizationId
+          ? { id: { not: excludeOrganizationId } }
+          : {}),
+      },
+      select: { id: true },
+    });
+
+    if (existingOrganization) {
+      throw new ConflictException(
+        'An organization with this name already exists',
+      );
+    }
+  }
+
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      Boolean(error) &&
+      typeof error === 'object' &&
+      (error as { code?: unknown }).code === 'P2002'
     );
   }
 }

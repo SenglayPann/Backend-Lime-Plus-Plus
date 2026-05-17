@@ -67,6 +67,8 @@ enum AuditAction {
 // Models
 model Organization {
   id          String       @id @default(uuid())
+  /// Normalized uniqueness is enforced by the
+  /// 20260517105000_add_module_duplicate_guards migration.
   name        String
   licensePlan String       @map("license_plan")
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -79,6 +81,8 @@ model Organization {
 model Department {
   id             String       @id @default(uuid())
   organizationId String       @map("organization_id")
+  /// Normalized per-organization uniqueness is enforced by the
+  /// 20260517105000_add_module_duplicate_guards migration.
   name           String
   description    String?      @db.Text
   createdAt      DateTime     @default(now()) @map("created_at")

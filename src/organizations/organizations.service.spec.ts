@@ -6,6 +6,7 @@ describe('OrganizationsService', () => {
     $transaction: jest.fn(),
     organization: {
       create: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -38,6 +39,7 @@ describe('OrganizationsService', () => {
       id: 'department-visible',
     });
     roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
+    prisma.organization.findFirst.mockResolvedValue(null);
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
     service = new OrganizationsService(
       prisma as any,
@@ -62,6 +64,33 @@ describe('OrganizationsService', () => {
         licensePlan: 'academic',
       },
     });
+  });
+
+  it('rejects duplicate organization names before creating', async () => {
+    prisma.organization.findFirst.mockResolvedValueOnce({ id: 'org-existing' });
+
+    await expect(
+      service.create(
+        { name: 'Engineering', license_plan: 'academic' },
+        'admin',
+        ['ADMIN'],
+      ),
+    ).rejects.toThrow('An organization with this name already exists');
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.organization.create).not.toHaveBeenCalled();
+  });
+
+  it('returns a conflict if the organization name unique index is hit during create', async () => {
+    prisma.organization.create.mockRejectedValueOnce({ code: 'P2002' });
+
+    await expect(
+      service.create(
+        { name: 'Engineering', license_plan: 'academic' },
+        'admin',
+        ['ADMIN'],
+      ),
+    ).rejects.toThrow('An organization with this name already exists');
   });
 
   it('creates the selected organization manager role in the same transaction', async () => {
@@ -207,6 +236,16 @@ describe('OrganizationsService', () => {
         licensePlan: 'enterprise',
       },
     });
+  });
+
+  it('rejects renaming an organization to a duplicate name', async () => {
+    prisma.organization.findFirst.mockResolvedValueOnce({ id: 'org-existing' });
+
+    await expect(
+      service.update('org-1', { name: 'Engineering' }, 'admin', ['ADMIN']),
+    ).rejects.toThrow('An organization with this name already exists');
+
+    expect(prisma.organization.update).not.toHaveBeenCalled();
   });
 
   it('adds an organization manager while updating organization fields', async () => {
