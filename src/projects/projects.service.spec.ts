@@ -22,7 +22,12 @@ describe('ProjectsService project membership', () => {
     scoreOverride: { count: jest.fn() },
     contributionEvent: { count: jest.fn() },
     user: { findUnique: jest.fn(), findFirst: jest.fn() },
-    project: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn() },
+    project: {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
     auditLog: { create: jest.fn() },
   };
   const githubService = {
@@ -84,6 +89,7 @@ describe('ProjectsService project membership', () => {
     usersService.getGitHubAccessToken.mockResolvedValue(null);
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
     prisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
+    prisma.project.findUnique.mockResolvedValue(null);
     prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
     prisma.project.findMany.mockResolvedValue([]);
     prisma.project.create.mockResolvedValue({ id: 'project-1' });
@@ -189,6 +195,53 @@ describe('ProjectsService project membership', () => {
           }) as unknown,
         }),
       );
+    });
+
+    it('returns a conflict when the GitHub repository is already linked to a project', async () => {
+      prisma.project.findUnique.mockResolvedValueOnce({
+        id: 'existing-project',
+        name: 'Existing Capstone',
+      });
+      prisma.project.findFirst.mockResolvedValueOnce({
+        id: 'existing-project',
+      });
+
+      await expect(
+        service.create(dto, 'creator', ['DEPARTMENT_MANAGER'], 'gh-token'),
+      ).rejects.toThrow(
+        'A project already exists for this GitHub repository: Existing Capstone',
+      );
+
+      expect(prisma.project.create).not.toHaveBeenCalled();
+    });
+
+    it('does not reveal the existing project name when the actor cannot access it', async () => {
+      prisma.project.findUnique.mockResolvedValueOnce({
+        id: 'hidden-project',
+        name: 'Private Capstone',
+      });
+      prisma.project.findFirst.mockResolvedValueOnce(null);
+
+      const error = await service
+        .create(dto, 'creator', ['DEPARTMENT_MANAGER'], 'gh-token')
+        .catch((err) => err);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.message).toBe(
+        'A project already exists for this GitHub repository',
+      );
+      expect(error.message).not.toContain('Private Capstone');
+    });
+
+    it('returns a conflict if the repository unique constraint is hit during create', async () => {
+      prisma.project.create.mockRejectedValueOnce({
+        code: 'P2002',
+        meta: { target: ['githubRepositoryId'] },
+      });
+
+      await expect(
+        service.create(dto, 'creator', ['DEPARTMENT_MANAGER'], 'gh-token'),
+      ).rejects.toThrow('A project already exists for this GitHub repository');
     });
 
     it('blocks assigning a protected target as project manager', async () => {

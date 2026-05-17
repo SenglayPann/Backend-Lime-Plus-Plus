@@ -57,6 +57,11 @@ export class ProjectsService {
       actorId,
       githubToken,
     );
+    await this.assertRepositoryNotLinkedToProject(
+      githubResources.repositoryId,
+      actorId,
+      actorRoles,
+    );
     const projectManagerId = dto.project_manager_id ?? actorId;
     await this.assertProjectManagerAssignable(
       projectManagerId,
@@ -68,30 +73,98 @@ export class ProjectsService {
       dto.evaluation_window,
     );
 
-    return this.prisma.project.create({
-      data: {
-        name: dto.name,
-        departmentId: dto.department_id,
-        repository: normalizeRepositoryFullName(dto.repository),
-        githubRepositoryId: githubResources.repositoryId,
-        externalProjectId: dto.github_project_id,
-        evalStart: evaluationWindow.evalStart,
-        evalEnd: evaluationWindow.evalEnd,
-        members: {
-          create: {
-            userId: projectManagerId,
-            role: 'PROJECT_MANAGER',
-            source: 'PROJECT_CREATION',
-            createdBy: actorId,
+    try {
+      return await this.prisma.project.create({
+        data: {
+          name: dto.name,
+          departmentId: dto.department_id,
+          repository: normalizeRepositoryFullName(dto.repository),
+          githubRepositoryId: githubResources.repositoryId,
+          externalProjectId: dto.github_project_id,
+          evalStart: evaluationWindow.evalStart,
+          evalEnd: evaluationWindow.evalEnd,
+          members: {
+            create: {
+              userId: projectManagerId,
+              role: 'PROJECT_MANAGER',
+              source: 'PROJECT_CREATION',
+              createdBy: actorId,
+            },
           },
         },
-      },
-      include: {
-        department: true,
-        members: { include: { user: { select: safeUserSelect } } },
-        _count: { select: { members: true, tasks: true, pullRequests: true } },
-      },
+        include: {
+          department: true,
+          members: { include: { user: { select: safeUserSelect } } },
+          _count: {
+            select: { members: true, tasks: true, pullRequests: true },
+          },
+        },
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error, 'githubRepositoryId')) {
+        throw new ConflictException(
+          'A project already exists for this GitHub repository',
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  private async assertRepositoryNotLinkedToProject(
+    repositoryId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    const existingProject = await this.prisma.project.findUnique({
+      where: { githubRepositoryId: repositoryId },
+      select: { id: true, name: true },
     });
+
+    if (!existingProject) {
+      return;
+    }
+
+    const visibleExistingProject = await this.prisma.project.findFirst({
+      where: {
+        AND: [
+          { id: existingProject.id },
+          this.projectAccessService.buildAccessibleProjectWhere(
+            actorId,
+            actorRoles,
+          ),
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!visibleExistingProject) {
+      throw new ConflictException(
+        'A project already exists for this GitHub repository',
+      );
+    }
+
+    throw new ConflictException(
+      `A project already exists for this GitHub repository: ${existingProject.name}`,
+    );
+  }
+
+  private isUniqueConstraintError(error: unknown, field: string) {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const candidate = error as { code?: unknown; meta?: { target?: unknown } };
+    if (candidate.code !== 'P2002') {
+      return false;
+    }
+
+    const target = candidate.meta?.target;
+    if (Array.isArray(target)) {
+      return target.includes(field);
+    }
+
+    return target === field;
   }
 
   private async validateGitHubResources(
