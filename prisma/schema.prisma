@@ -16,6 +16,7 @@ enum Role {
   ORGANIZATION_MANAGER
   DEPARTMENT_MANAGER
   PROJECT_MANAGER
+  PROJECT_LEAD
   PROJECT_MEMBER
 }
 
@@ -114,6 +115,8 @@ model User {
   overridesPerformed   ScoreOverride[]     @relation("OverriddenBy")
   auditLogs            AuditLog[]
   authHandoffCodes     AuthHandoffCode[]
+  attachedProjects     Project[]           @relation("ProjectAttacher")
+  createdProjects      Project[]           @relation("ProjectCreator")
   refreshTokens        RefreshToken[]
 
   @@map("users")
@@ -141,7 +144,7 @@ model Project {
   departmentId       String              @map("department_id")
   name               String
   platform           Platform            @default(GITHUB)
-  repository         String
+  repository         String?
   githubRepositoryId String?             @unique @map("github_repository_id")
   externalProjectId  String?             @map("external_project_id")
   status             ProjectStatus       @default(ACTIVE)
@@ -149,8 +152,13 @@ model Project {
   evalEnd            DateTime?           @map("eval_end") @db.Date
   lockedAt           DateTime?           @map("locked_at")
   scoringConfig      Json?               @map("scoring_config")
+  attachedByUserId   String?             @map("attached_by_user_id")
+  projectGithubToken String?             @map("project_github_token")
+  createdById        String?             @map("created_by_id")
   createdAt          DateTime            @default(now()) @map("created_at")
   department         Department          @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  attachedByUser     User?               @relation("ProjectAttacher", fields: [attachedByUserId], references: [id], onDelete: SetNull)
+  creator            User?               @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
   members            ProjectMember[]
   tasks              Task[]
   pullRequests       PullRequest[]

@@ -6,6 +6,7 @@ export type Role =
   | 'ADMIN'
   | 'DEPARTMENT_MANAGER'
   | 'PROJECT_MANAGER'
+  | 'PROJECT_LEAD'
   | 'PROJECT_MEMBER';
 
 export const ROLES_KEY = 'roles';

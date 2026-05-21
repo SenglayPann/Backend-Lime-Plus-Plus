@@ -37,23 +37,33 @@ export class CreateProjectDto {
   @IsOptional()
   project_manager_id?: string;
 
+  @ApiProperty({
+    example: 'e7c54a4d-8a13-4a99-9d19-901c40b3a8ff',
+    description: 'Mandatory student leader (Project Lead) for this project.',
+    required: true,
+  })
+  @IsUUID()
+  @IsNotEmpty()
+  project_lead_id: string;
+
   @ApiProperty({ example: 'Distributed Systems Project' })
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @ApiProperty({ example: 'PVT_kwHO...', description: 'GitHub Project V2 ID' })
+  @ApiProperty({ example: 'PVT_kwHO...', description: 'GitHub Project V2 ID', required: false })
   @IsString()
-  @IsNotEmpty()
-  github_project_id: string;
+  @IsOptional()
+  github_project_id?: string;
 
   @ApiProperty({
     example: 'org/repo',
     description: 'GitHub repository in owner/repo format',
+    required: false,
   })
   @IsString()
-  @IsNotEmpty()
-  repository: string;
+  @IsOptional()
+  repository?: string;
 
   @ApiProperty({
     example: { start: '2026-03-01', end: '2026-05-30' },

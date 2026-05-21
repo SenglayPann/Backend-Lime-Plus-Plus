@@ -17,7 +17,7 @@ describe('DepartmentsService', () => {
       delete: jest.fn(),
     },
     user: { findUnique: jest.fn(), findFirst: jest.fn() },
-    userRole: { create: jest.fn(), findFirst: jest.fn() },
+    userRole: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
     auditLog: { create: jest.fn() },
   };
 
@@ -47,6 +47,7 @@ describe('DepartmentsService', () => {
     });
     roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
     prisma.department.findFirst.mockResolvedValue(null);
+    prisma.userRole.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
     service = new DepartmentsService(
       prisma as any,
@@ -363,13 +364,11 @@ describe('DepartmentsService', () => {
       ['ORGANIZATION_MANAGER'],
       'manager-2',
     );
-    expect(prisma.userRole.findFirst).toHaveBeenCalledWith({
+    expect(prisma.userRole.findMany).toHaveBeenCalledWith({
       where: {
-        userId: 'manager-2',
         role: 'DEPARTMENT_MANAGER',
         departmentId: 'dept-1',
       },
-      select: { id: true },
     });
     expect(prisma.userRole.create).toHaveBeenCalledWith({
       data: {

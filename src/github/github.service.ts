@@ -392,4 +392,38 @@ export class GitHubService {
       this.logger.error(`Error creating commit status for ${sha}`, error);
     }
   }
+
+  /**
+   * Check if a user is a collaborator on a repository (returns boolean)
+   */
+  async isCollaborator(
+    owner: string,
+    repo: string,
+    username: string,
+    accessToken: string,
+  ): Promise<boolean> {
+    const url = `https://api.github.com/repos/${owner}/${repo}/collaborators/${username}`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/vnd.github.v3+json',
+          Authorization: `token ${accessToken}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+
+      if (response.status === 204) {
+        return true;
+      }
+      return false;
+    } catch (error) {
+      this.logger.error(
+        `Failed to check collaborator status for ${username} in ${owner}/${repo}`,
+        error,
+      );
+      return false;
+    }
+  }
 }

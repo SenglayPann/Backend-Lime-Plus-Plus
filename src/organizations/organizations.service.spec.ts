@@ -13,7 +13,7 @@ describe('OrganizationsService', () => {
       delete: jest.fn(),
     },
     user: { findUnique: jest.fn() },
-    userRole: { create: jest.fn(), findFirst: jest.fn() },
+    userRole: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
     auditLog: { create: jest.fn() },
   };
 
@@ -40,6 +40,7 @@ describe('OrganizationsService', () => {
     });
     roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
     prisma.organization.findFirst.mockResolvedValue(null);
+    prisma.userRole.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
     service = new OrganizationsService(
       prisma as any,
@@ -269,13 +270,11 @@ describe('OrganizationsService', () => {
       ['ADMIN'],
       'manager-2',
     );
-    expect(prisma.userRole.findFirst).toHaveBeenCalledWith({
+    expect(prisma.userRole.findMany).toHaveBeenCalledWith({
       where: {
-        userId: 'manager-2',
         role: 'ORGANIZATION_MANAGER',
         organizationId: 'org-1',
       },
-      select: { id: true },
     });
     expect(prisma.userRole.create).toHaveBeenCalledWith({
       data: {

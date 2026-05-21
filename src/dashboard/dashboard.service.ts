@@ -727,7 +727,7 @@ type DashboardProject = {
   id: string;
   name: string;
   status: string;
-  repository: string;
+  repository: string | null;
   departmentId: string;
   createdAt: Date;
   department: {

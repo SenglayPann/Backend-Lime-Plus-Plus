@@ -34,6 +34,7 @@ describe('ProjectsService project membership', () => {
     getRepositoryInfo: jest.fn(),
     repositoryExists: jest.fn(),
     projectV2Exists: jest.fn(),
+    isCollaborator: jest.fn(),
   };
   const configService = { get: jest.fn() };
   const usersService = { getGitHubAccessToken: jest.fn() };
@@ -43,6 +44,7 @@ describe('ProjectsService project membership', () => {
     assertCanCreateProjectInDepartment: jest.fn(),
     buildAccessibleProjectWhere: jest.fn(),
     buildManageableProjectWhere: jest.fn(),
+    canManageProject: jest.fn(),
   };
   const projectLockGuard = {
     assertMutable: jest.fn(),
@@ -67,11 +69,18 @@ describe('ProjectsService project membership', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    configService.get.mockImplementation((key: string) => {
+      if (key === 'GITHUB_TOKEN_ENCRYPTION_KEY' || key === 'JWT_SECRET') {
+        return 'test-encryption-key-32-chars-long';
+      }
+      return null;
+    });
     projectAccessService.assertCanManageProject.mockResolvedValue(undefined);
     projectAccessService.assertCanViewProject.mockResolvedValue(undefined);
     projectAccessService.assertCanCreateProjectInDepartment.mockResolvedValue(
       undefined,
     );
+    projectAccessService.canManageProject.mockResolvedValue(true);
     projectLockGuard.assertMutable.mockReturnValue(undefined);
     roleDelegationService.assertTargetCanBeManaged.mockResolvedValue(undefined);
     userVisibilityService.buildVisibleUserWhere.mockReturnValue({});
@@ -86,8 +95,9 @@ describe('ProjectsService project membership', () => {
     });
     githubService.repositoryExists.mockResolvedValue(true);
     githubService.projectV2Exists.mockResolvedValue(true);
+    githubService.isCollaborator.mockResolvedValue(true);
     usersService.getGitHubAccessToken.mockResolvedValue(null);
-    prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', githubUsername: 'student-lead', name: 'Student' });
     prisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
     prisma.project.findUnique.mockResolvedValue(null);
     prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
@@ -152,6 +162,7 @@ describe('ProjectsService project membership', () => {
       name: 'Capstone',
       repository: 'owner/repo',
       github_project_id: 'PVT_1',
+      project_lead_id: 'lead-1',
     };
 
     it('defaults the creator to project manager when no explicit manager is supplied', async () => {
@@ -161,10 +172,16 @@ describe('ProjectsService project membership', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             members: {
-              create: expect.objectContaining({
-                userId: 'creator',
-                role: 'PROJECT_MANAGER',
-              }),
+              create: expect.arrayContaining([
+                expect.objectContaining({
+                  userId: 'creator',
+                  role: 'PROJECT_MANAGER',
+                }),
+                expect.objectContaining({
+                  userId: 'lead-1',
+                  role: 'PROJECT_LEAD',
+                }),
+              ]),
             },
           }) as unknown,
         }),

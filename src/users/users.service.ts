@@ -199,7 +199,11 @@ export class UsersService {
           }))
           .filter((scope) => Boolean(scope.id)),
         departments: user.userRoles
-          .filter((role) => role.role === Role.DEPARTMENT_MANAGER)
+          .filter(
+            (role) =>
+              role.role === Role.DEPARTMENT_MANAGER ||
+              role.role === Role.PROJECT_MANAGER,
+          )
           .map((role) => ({
             id: role.departmentId,
             name: role.department?.name || 'Unknown department',
@@ -244,6 +248,69 @@ export class UsersService {
       actorRoles,
       roleId,
     );
+  }
+
+  async getProjectManagers(actorId: string, actorRoles: AccessRole[]) {
+    const visibleUserWhere = this.userVisibilityService.buildVisibleUserWhere(
+      actorId,
+      actorRoles,
+    );
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        AND: [
+          visibleUserWhere,
+          {
+            userRoles: {
+              some: {
+                role: Role.PROJECT_MANAGER,
+              },
+            },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        githubUsername: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        createdAt: true,
+        userRoles: {
+          where: {
+            role: Role.PROJECT_MANAGER,
+          },
+          include: {
+            organization: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
+        projectMembers: {
+          where: {
+            role: Role.PROJECT_MANAGER,
+          },
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    return (users as any[]).map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      githubUsername: user.githubUsername,
+      avatarUrl: user.avatarUrl,
+      createdAt: user.createdAt,
+      activeProjectsCount: user.projectMembers.length,
+      roles: user.userRoles.map((ur: any) => ({
+        id: ur.id,
+        role: ur.role,
+        organization: ur.organization,
+        department: ur.department,
+      })),
+    }));
   }
 
   async findAll(actorId: string, actorRoles: AccessRole[]) {

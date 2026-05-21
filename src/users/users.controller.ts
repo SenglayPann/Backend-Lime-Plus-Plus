@@ -32,6 +32,13 @@ export class UsersController {
     return this.usersService.findAll(req.user.id, req.user.roles);
   }
 
+  @Get('project-managers')
+  @Roles(Role.DEPARTMENT_MANAGER)
+  @ApiOperation({ summary: 'List supervised Project Managers' })
+  async findProjectManagers(@Request() req: RequestWithUser) {
+    return this.usersService.getProjectManagers(req.user.id, req.user.roles);
+  }
+
   @Get(':id')
   @Roles(Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Get user details with roles' })
@@ -46,7 +53,7 @@ export class UsersController {
   }
 
   @Post(':userId/roles')
-  @Roles(Role.ORGANIZATION_MANAGER)
+  @Roles(Role.DEPARTMENT_MANAGER)
   @ApiOperation({ summary: 'Assign a scoped role to a user' })
   async assignRole(
     @Param('userId') userId: string,
@@ -64,7 +71,7 @@ export class UsersController {
   }
 
   @Delete('roles/:roleId')
-  @Roles(Role.ORGANIZATION_MANAGER)
+  @Roles(Role.DEPARTMENT_MANAGER)
   @ApiOperation({ summary: 'Remove a scoped role from a user' })
   async removeRole(
     @Param('roleId') roleId: string,

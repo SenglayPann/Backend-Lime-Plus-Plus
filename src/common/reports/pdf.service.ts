@@ -14,7 +14,7 @@ export interface IndividualReportData {
     name: string;
     organization: string;
     department: string;
-    repository: string;
+    repository?: string | null;
     externalProjectId: string;
     status: string;
     evalStart?: PdfDate;
@@ -54,7 +54,7 @@ export interface ProjectReportData {
     name: string;
     organization: string;
     department: string;
-    repository: string;
+    repository?: string | null;
     externalProjectId: string;
     status: string;
     evalStart?: PdfDate;
@@ -123,7 +123,7 @@ export class PdfService {
         ['Organization', data.project.organization],
         ['Department', data.project.department],
         ['Project', data.project.name],
-        ['Repository', data.project.repository],
+        ['Repository', data.project.repository || 'N/A'],
       ]);
 
       this.section(doc, 'Score Summary');
@@ -193,7 +193,7 @@ export class PdfService {
         ['Project name', data.project.name],
         ['Organization', data.project.organization],
         ['Department', data.project.department],
-        ['Repository', data.project.repository],
+        ['Repository', data.project.repository || 'N/A'],
         ['GitHub Project V2 ID', data.project.externalProjectId],
         ['Status', data.project.status],
         [

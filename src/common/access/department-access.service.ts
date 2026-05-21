@@ -46,6 +46,17 @@ export class DepartmentAccessService {
       });
     }
 
+    if (roles.includes('PROJECT_MANAGER')) {
+      clauses.push({
+        userRoles: {
+          some: {
+            userId,
+            role: PrismaRole.PROJECT_MANAGER,
+          },
+        },
+      });
+    }
+
     if (this.hasAnyRole(roles, ['PROJECT_MANAGER', 'PROJECT_MEMBER'])) {
       clauses.push({
         projects: {

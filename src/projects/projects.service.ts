@@ -7,6 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomBytes, createCipheriv, createDecipheriv, scryptSync } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GitHubService } from '../github/github.service';
 import type { GitHubProjectItem } from '../github/github.types';
@@ -14,6 +15,7 @@ import { normalizeRepositoryFullName } from '../github/repository-normalization'
 import { findOrCreateGitHubUser } from '../github/github-user-resolution';
 import { UsersService } from '../users/users.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { AttachGitHubDto } from './dto/attach-github.dto';
 import {
   ProjectStatus,
   AuditAction,
@@ -52,16 +54,7 @@ export class ProjectsService {
       actorRoles,
       dto.department_id,
     );
-    const githubResources = await this.validateGitHubResources(
-      dto,
-      actorId,
-      githubToken,
-    );
-    await this.assertRepositoryNotLinkedToProject(
-      githubResources.repositoryId,
-      actorId,
-      actorRoles,
-    );
+
     const projectManagerId = dto.project_manager_id ?? actorId;
     await this.assertProjectManagerAssignable(
       projectManagerId,
@@ -69,29 +62,126 @@ export class ProjectsService {
       actorRoles,
     );
 
+    if (projectManagerId === dto.project_lead_id) {
+      throw new BadRequestException('Project Manager and Project Lead cannot be the same user.');
+    }
+
+    // Lookup and validate the mandatory Project Lead user
+    const projectLead = await this.prisma.user.findUnique({
+      where: { id: dto.project_lead_id },
+      select: { id: true, githubUsername: true, name: true },
+    });
+    if (!projectLead) {
+      throw new NotFoundException('Project Lead user not found');
+    }
+
     const evaluationWindow = this.resolveEvaluationWindow(
       dto.evaluation_window,
     );
 
+    const repository = dto.repository?.trim() || null;
+    const githubProjectId = dto.github_project_id?.trim() || null;
+
+    // Validate collaborator access if a pre-attached repository is provided
+    if (repository) {
+      if (!projectLead.githubUsername) {
+        throw new BadRequestException(
+          `The assigned Project Lead (${projectLead.name || 'Student'}) must link their GitHub account before they can be assigned to a repository-linked project.`,
+        );
+      }
+
+      const match = normalizeRepositoryFullName(repository).match(/^([^/\s]+)\/([^/\s]+)$/);
+      if (!match) {
+        throw new BadRequestException('Repository must use the owner/repo format, for example octocat/hello-world');
+      }
+      const [, owner, repoName] = match;
+
+      const accessToken =
+        githubToken ||
+        (await this.usersService.getGitHubAccessToken(actorId)) ||
+        this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
+
+      if (!accessToken) {
+        throw new BadRequestException('GitHub access token is required to validate collaborator access.');
+      }
+
+      const isCollab = await this.githubService.isCollaborator(
+        owner,
+        repoName,
+        projectLead.githubUsername,
+        accessToken,
+      );
+      if (!isCollab) {
+        throw new BadRequestException(
+          `The assigned Project Lead (@${projectLead.githubUsername}) is not a collaborator on the pre-attached repository '${repository}'. Please add them as a collaborator on GitHub first.`,
+        );
+      }
+    }
+
+    let githubResources: { repositoryId: string } | null = null;
+    if (repository && githubProjectId) {
+      githubResources = await this.validateGitHubResources(
+        { repository, github_project_id: githubProjectId },
+        actorId,
+        githubToken,
+      );
+      await this.assertRepositoryNotLinkedToProject(
+        githubResources.repositoryId,
+        actorId,
+        actorRoles,
+      );
+    }
+
     try {
-      return await this.prisma.project.create({
+      const project = await this.prisma.project.create({
         data: {
           name: dto.name,
           departmentId: dto.department_id,
-          repository: normalizeRepositoryFullName(dto.repository),
-          githubRepositoryId: githubResources.repositoryId,
-          externalProjectId: dto.github_project_id,
+          repository: repository ? normalizeRepositoryFullName(repository) : null,
+          githubRepositoryId: githubResources?.repositoryId ?? null,
+          externalProjectId: githubProjectId,
           evalStart: evaluationWindow.evalStart,
           evalEnd: evaluationWindow.evalEnd,
+          attachedByUserId: repository ? actorId : null,
+          projectGithubToken: repository && githubToken ? this.encryptToken(githubToken) : null,
+          createdById: actorId,
           members: {
-            create: {
-              userId: projectManagerId,
-              role: 'PROJECT_MANAGER',
-              source: 'PROJECT_CREATION',
-              createdBy: actorId,
-            },
+            create: [
+              {
+                userId: projectManagerId,
+                role: 'PROJECT_MANAGER',
+                source: 'PROJECT_CREATION',
+                createdBy: actorId,
+              },
+              {
+                userId: dto.project_lead_id,
+                role: 'PROJECT_LEAD',
+                source: 'PROJECT_CREATION',
+                createdBy: actorId,
+              },
+            ],
           },
         },
+      });
+
+      // Automatically sync tasks immediately after project creation if linked!
+      if (repository && githubProjectId) {
+        try {
+          const syncToken = githubToken ||
+            (await this.usersService.getGitHubAccessToken(actorId)) ||
+            this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
+
+          if (syncToken) {
+            await this.syncTasks(project.id, syncToken, actorId, actorRoles);
+          }
+        } catch (syncError) {
+          console.error('Failed to auto-sync tasks on project creation:', syncError);
+        }
+      }
+
+      // Return the complete project with updated counts
+      return await this.prisma.project.findUnique({
+        where: { id: project.id },
         include: {
           department: true,
           members: { include: { user: { select: safeUserSelect } } },
@@ -168,7 +258,7 @@ export class ProjectsService {
   }
 
   private async validateGitHubResources(
-    dto: CreateProjectDto,
+    dto: { repository: string; github_project_id: string },
     actorId: string,
     githubToken?: string,
   ) {
@@ -373,7 +463,29 @@ export class ProjectsService {
     });
 
     if (!project) throw new NotFoundException('Project not found');
-    return project;
+
+    // Trigger background sync if active, linked, and query-er has manage privileges
+    if (project.status === ProjectStatus.ACTIVE && project.externalProjectId && canManageProject) {
+      this.usersService.getGitHubAccessToken(actorId)
+        .then(async (userToken) => {
+          const syncToken = userToken || 
+            (project.projectGithubToken ? this.decryptToken(project.projectGithubToken) : null) ||
+            this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
+
+          if (syncToken) {
+            await this.syncTasks(project.id, syncToken, actorId, actorRoles);
+          }
+        })
+        .catch((err) => {
+          console.error(`Failed to background sync tasks for project ${id}:`, err);
+        });
+    }
+
+    // Safely remove the encrypted projectGithubToken from the public API response
+    const safeProject = { ...project };
+    delete (safeProject as any).projectGithubToken;
+
+    return safeProject;
   }
 
   async listMembers(id: string, actorId: string, actorRoles: Role[]) {
@@ -567,14 +679,20 @@ export class ProjectsService {
 
     this.projectLockGuard.assertMutable(project, 'sync tasks');
 
+    const projectDb = await this.prisma.project.findUnique({
+      where: { id },
+      select: { projectGithubToken: true }
+    });
+
     const resolvedAccessToken =
       accessToken ||
+      (projectDb?.projectGithubToken ? this.decryptToken(projectDb.projectGithubToken) : null) ||
       (await this.usersService.getGitHubAccessToken(actorId)) ||
       this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
 
     if (!resolvedAccessToken) {
       throw new BadRequestException(
-        'Cannot sync Kanban because Lime++ has no GitHub token for this user. Sign out and sign in again with GitHub project permissions, or configure GITHUB_PERSONAL_ACCESS_TOKEN on the backend.',
+        'Cannot sync Kanban because Lime++ has no GitHub token for this user or project. Sign out and sign in again with GitHub project permissions, or configure GITHUB_PERSONAL_ACCESS_TOKEN on the backend.',
       );
     }
 
@@ -1027,5 +1145,119 @@ export class ProjectsService {
         'Project must have at least one assigned task before it can be locked',
       );
     }
+  }
+
+  async attachGithub(
+    id: string,
+    dto: AttachGitHubDto,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    await this.projectAccessService.assertCanManageProject(
+      actorId,
+      actorRoles,
+      id,
+    );
+
+    const project = await this.prisma.project.findUnique({
+      where: { id },
+    });
+
+    if (!project) throw new NotFoundException('Project not found');
+
+    this.projectLockGuard.assertMutable(project, 'attach GitHub');
+
+    const githubToken = dto.github_token ||
+      (await this.usersService.getGitHubAccessToken(actorId)) ||
+      this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
+
+    if (!githubToken) {
+      throw new BadRequestException(
+        'A GitHub Access Token is required to validate the repository and project attachment. Sign out and sign in again with GitHub, or supply a token.',
+      );
+    }
+
+    const githubResources = await this.validateGitHubResources(
+      { repository: dto.repository, github_project_id: dto.github_project_id },
+      actorId,
+      githubToken,
+    );
+
+    await this.assertRepositoryNotLinkedToProject(
+      githubResources.repositoryId,
+      actorId,
+      actorRoles,
+    );
+
+    const updatedProject = await this.prisma.project.update({
+      where: { id },
+      data: {
+        repository: normalizeRepositoryFullName(dto.repository),
+        githubRepositoryId: githubResources.repositoryId,
+        externalProjectId: dto.github_project_id,
+        attachedByUserId: actorId,
+        projectGithubToken: this.encryptToken(githubToken),
+      },
+    });
+
+    try {
+      await this.syncTasks(id, githubToken, actorId, actorRoles);
+    } catch (syncError) {
+      console.error('Failed to trigger initial task sync on attach:', syncError);
+    }
+
+    return this.findOne(id, actorId, actorRoles);
+  }
+
+  private encryptToken(token: string): string {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', this.getEncryptionKey(), iv);
+    const encrypted = Buffer.concat([
+      cipher.update(token, 'utf8'),
+      cipher.final(),
+    ]);
+    const tag = cipher.getAuthTag();
+
+    return [
+      'v1',
+      iv.toString('base64'),
+      tag.toString('base64'),
+      encrypted.toString('base64'),
+    ].join(':');
+  }
+
+  private decryptToken(encryptedToken: string): string | null {
+    try {
+      const [version, iv, tag, encrypted] = encryptedToken.split(':');
+      if (version !== 'v1' || !iv || !tag || !encrypted) return null;
+
+      const decipher = createDecipheriv(
+        'aes-256-gcm',
+        this.getEncryptionKey(),
+        Buffer.from(iv, 'base64'),
+      );
+      decipher.setAuthTag(Buffer.from(tag, 'base64'));
+
+      return Buffer.concat([
+        decipher.update(Buffer.from(encrypted, 'base64')),
+        decipher.final(),
+      ]).toString('utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  private getEncryptionKey(): Buffer {
+    const secret =
+      this.configService.get<string>('GITHUB_TOKEN_ENCRYPTION_KEY') ||
+      this.configService.get<string>('JWT_SECRET');
+
+    if (!secret) {
+      throw new Error(
+        'GITHUB_TOKEN_ENCRYPTION_KEY or JWT_SECRET is required to encrypt GitHub tokens',
+      );
+    }
+
+    return scryptSync(secret, 'lime-github-token', 32);
   }
 }

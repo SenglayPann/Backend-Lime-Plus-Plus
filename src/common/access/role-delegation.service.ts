@@ -14,6 +14,7 @@ const ROLE_RANK: Record<Role, number> = {
   ORGANIZATION_MANAGER: 4,
   DEPARTMENT_MANAGER: 3,
   PROJECT_MANAGER: 2,
+  PROJECT_LEAD: 1.5,
   PROJECT_MEMBER: 1,
 };
 
@@ -149,6 +150,15 @@ export class RoleDelegationService {
       return;
     }
 
+    if (role === PrismaRole.PROJECT_MANAGER) {
+      await this.assertActorManagesDepartment(
+        actorId,
+        actorRoles,
+        departmentId!,
+      );
+      return;
+    }
+
     throw new ForbiddenException('You cannot assign this role');
   }
 
@@ -184,13 +194,22 @@ export class RoleDelegationService {
       return;
     }
 
+    if (role.role === PrismaRole.PROJECT_MANAGER && role.departmentId) {
+      await this.assertActorManagesDepartment(
+        actorId,
+        actorRoles,
+        role.departmentId,
+      );
+      return;
+    }
+
     throw new ForbiddenException('You cannot remove this role');
   }
 
   private assertRoleUsesUserRoles(role: PrismaRole) {
     if (
-      role === PrismaRole.PROJECT_MANAGER ||
-      role === PrismaRole.PROJECT_MEMBER
+      role === PrismaRole.PROJECT_MEMBER ||
+      role === PrismaRole.PROJECT_LEAD
     ) {
       throw new BadRequestException(
         'Project roles must be managed through project membership',
@@ -233,6 +252,61 @@ export class RoleDelegationService {
         'Department Manager cannot have organization_id',
       );
     }
+
+    if (role === PrismaRole.PROJECT_MANAGER && !departmentId) {
+      throw new BadRequestException(
+        'Project Manager supervisor requires department_id scope',
+      );
+    }
+  }
+
+  private async assertActorManagesDepartment(
+    actorId: string,
+    actorRoles: Role[],
+    departmentId: string,
+  ) {
+    if (actorRoles.includes('ORGANIZATION_MANAGER')) {
+      const department = await this.prisma.department.findFirst({
+        where: {
+          id: departmentId,
+          organization: {
+            userRoles: {
+              some: {
+                userId: actorId,
+                role: PrismaRole.ORGANIZATION_MANAGER,
+              },
+            },
+          },
+        },
+        select: { id: true },
+      });
+      if (!department) {
+        throw new ForbiddenException(
+          'You do not manage the selected department organization',
+        );
+      }
+      return;
+    }
+
+    if (actorRoles.includes('DEPARTMENT_MANAGER')) {
+      const actorRole = await this.prisma.userRole.findFirst({
+        where: {
+          userId: actorId,
+          role: PrismaRole.DEPARTMENT_MANAGER,
+          departmentId,
+        },
+      });
+      if (!actorRole) {
+        throw new ForbiddenException(
+          'You are not a department manager for this department',
+        );
+      }
+      return;
+    }
+
+    throw new ForbiddenException(
+      'Only department managers or organization managers can manage project managers',
+    );
   }
 
   private async assertActorManagesDepartmentOrganization(
@@ -288,7 +362,7 @@ export class RoleDelegationService {
     }
   }
 
-  private async getTargetEffectiveRoles(userId: string): Promise<Role[]> {
+  async getTargetEffectiveRoles(userId: string): Promise<Role[]> {
     const [userRoles, projectRoles] = await Promise.all([
       this.prisma.userRole.findMany({
         where: { userId },

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -19,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { AttachGitHubDto } from './dto/attach-github.dto';
 import { UpsertProjectMemberDto } from './dto/upsert-project-member.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
@@ -34,8 +36,8 @@ export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
   @Post()
-  @Roles(Role.DEPARTMENT_MANAGER)
-  @ApiOperation({ summary: 'Create a new project (Dept Manager+)' })
+  @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
+  @ApiOperation({ summary: 'Create a new project (Dept Manager/Project Manager)' })
   async create(
     @Body() createProjectDto: CreateProjectDto,
     @Request() req: RequestWithUser,
@@ -150,6 +152,22 @@ export class ProjectsController {
     return this.projectsService.syncTasks(
       id,
       accessToken,
+      req.user.id,
+      req.user.roles,
+    );
+  }
+
+  @Patch(':id/attach-github')
+  @Roles(Role.PROJECT_MANAGER, Role.PROJECT_LEAD)
+  @ApiOperation({ summary: 'Attach a GitHub repository and Project V2 (Project Manager/Lead)' })
+  async attachGithub(
+    @Param('id') id: string,
+    @Body() attachGitHubDto: AttachGitHubDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.projectsService.attachGithub(
+      id,
+      attachGitHubDto,
       req.user.id,
       req.user.roles,
     );

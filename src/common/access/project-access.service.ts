@@ -50,7 +50,7 @@ export class ProjectAccessService {
       });
     }
 
-    if (this.hasAnyRole(roles, ['PROJECT_MANAGER', 'PROJECT_MEMBER'])) {
+    if (this.hasAnyRole(roles, ['PROJECT_MANAGER', 'PROJECT_LEAD', 'PROJECT_MEMBER'])) {
       clauses.push({
         members: {
           some: {
@@ -138,6 +138,10 @@ export class ProjectAccessService {
       if (hasOrganizationRole) {
         return;
       }
+    }
+
+    if (roles.includes('PROJECT_MANAGER')) {
+      return;
     }
 
     if (!roles.includes('DEPARTMENT_MANAGER')) {
@@ -269,6 +273,17 @@ export class ProjectAccessService {
           some: {
             userId,
             role: PrismaRole.PROJECT_MANAGER,
+          },
+        },
+      });
+    }
+
+    if (roles.includes('PROJECT_LEAD')) {
+      managementClauses.push({
+        members: {
+          some: {
+            userId,
+            role: PrismaRole.PROJECT_LEAD,
           },
         },
       });
