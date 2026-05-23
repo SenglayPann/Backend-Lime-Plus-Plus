@@ -339,15 +339,38 @@ describe('ScoringService', () => {
       expect(calcSpy).toHaveBeenCalledWith('p1');
     });
 
-    it('blocks project managers from applying score overrides', async () => {
-      await expect(
-        service.applyOverride('p1', 'u1', 5, 'Bonus', 'manager', [
-          'PROJECT_MANAGER',
-        ]),
-      ).rejects.toThrow(
-        'You do not have permission to override project scores',
+    it('allows project managers to apply score overrides on managed projects', async () => {
+      mockProjectAccessService.assertCanManageProject.mockResolvedValue(undefined);
+      mockPrismaService.projectMember.findFirst.mockResolvedValue({ id: 'm1' });
+      mockPrismaService.project.findUnique.mockResolvedValue({
+        id: 'p1',
+        status: 'ACTIVE',
+      });
+      mockPrismaService.task.findMany.mockResolvedValue([]);
+      mockPrismaService.prReview.findMany.mockResolvedValue([]);
+      mockPrismaService.scoreOverride.findMany.mockResolvedValue([]);
+
+      const calcSpy = jest
+        .spyOn(service, 'calculateProjectScores')
+        .mockResolvedValue();
+
+      await service.applyOverride('p1', 'u1', 5, 'Bonus', 'teacher', [
+        'PROJECT_MANAGER',
+      ]);
+
+      expect(
+        mockProjectAccessService.assertCanManageProject,
+      ).toHaveBeenCalledWith('teacher', ['PROJECT_MANAGER'], 'p1');
+      expect(mockPrismaService.scoreOverride.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            delta: 5,
+            reason: 'Bonus',
+            overriddenBy: 'teacher',
+          }) as unknown,
+        }),
       );
-      expect(mockPrismaService.scoreOverride.create).not.toHaveBeenCalled();
+      expect(calcSpy).toHaveBeenCalledWith('p1');
     });
   });
 

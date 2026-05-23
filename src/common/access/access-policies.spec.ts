@@ -186,6 +186,39 @@ describe('scope-aware access policies', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('blocks project managers from creating projects outside their scoped department', async () => {
+      prisma.userRole.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.assertCanCreateProjectInDepartment(
+          'teacher',
+          ['PROJECT_MANAGER'],
+          'dept-other',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows project managers to create projects inside their scoped department', async () => {
+      prisma.userRole.findFirst.mockResolvedValueOnce({ id: 'role-pm-1' });
+
+      await expect(
+        service.assertCanCreateProjectInDepartment(
+          'teacher',
+          ['PROJECT_MANAGER'],
+          'dept-1',
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(prisma.userRole.findFirst).toHaveBeenCalledWith({
+        where: {
+          userId: 'teacher',
+          role: 'PROJECT_MANAGER',
+          departmentId: 'dept-1',
+        },
+        select: { id: true },
+      });
+    });
+
     it('builds project management scope from assigned manager roles only', () => {
       expect(
         service.buildManageableProjectWhere('manager', [
@@ -216,6 +249,63 @@ describe('scope-aware access policies', () => {
             },
           },
         ],
+      });
+    });
+  });
+
+  describe('DepartmentAccessService – PROJECT_LEAD visibility', () => {
+    const service = new DepartmentAccessService(prisma as any);
+
+    it('builds scoped department filters for project leads via project membership', () => {
+      expect(
+        service.buildAccessibleDepartmentWhere('lead', ['PROJECT_LEAD']),
+      ).toEqual({
+        projects: {
+          some: {
+            members: {
+              some: { userId: 'lead' },
+            },
+          },
+        },
+      });
+    });
+
+    it('builds scoped department filters for combined project lead and member roles', () => {
+      const result = service.buildAccessibleDepartmentWhere('lead', [
+        'PROJECT_LEAD',
+        'PROJECT_MEMBER',
+      ]);
+      // hasAnyRole fires once for the combined check, producing a single clause (not duplicated)
+      expect(result).toEqual({
+        projects: {
+          some: {
+            members: {
+              some: { userId: 'lead' },
+            },
+          },
+        },
+      });
+    });
+  });
+
+  describe('OrganizationAccessService – PROJECT_LEAD visibility', () => {
+    const service = new OrganizationAccessService(prisma as any);
+
+    it('builds scoped organization filters for project leads via project membership', () => {
+      expect(
+        service.buildAccessibleOrganizationWhere('lead', ['PROJECT_LEAD']),
+      ).toEqual({
+        departments: {
+          some: {
+            projects: {
+              some: {
+                members: {
+                  some: { userId: 'lead' },
+                },
+              },
+            },
+          },
+        },
       });
     });
   });

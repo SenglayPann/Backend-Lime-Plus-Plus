@@ -141,7 +141,18 @@ export class ProjectAccessService {
     }
 
     if (roles.includes('PROJECT_MANAGER')) {
-      return;
+      const hasProjectManagerRole = await this.prisma.userRole.findFirst({
+        where: {
+          userId,
+          role: PrismaRole.PROJECT_MANAGER,
+          departmentId,
+        },
+        select: { id: true },
+      });
+
+      if (hasProjectManagerRole) {
+        return;
+      }
     }
 
     if (!roles.includes('DEPARTMENT_MANAGER')) {

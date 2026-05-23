@@ -45,7 +45,7 @@ export class ScoringController {
   }
 
   @Post('projects/:projectId/users/:userId/override')
-  @Roles(Role.DEPARTMENT_MANAGER) // spec says "Teacher", department manager mapped here
+  @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
   @ApiOperation({ summary: 'Apply manual score override (Dept Manager+)' })
   async applyOverride(
     @Param('projectId') projectId: string,

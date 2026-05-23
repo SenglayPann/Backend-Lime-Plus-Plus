@@ -47,7 +47,7 @@ export class OrganizationAccessService {
       });
     }
 
-    if (this.hasAnyRole(roles, ['PROJECT_MANAGER', 'PROJECT_MEMBER'])) {
+    if (this.hasAnyRole(roles, ['PROJECT_MANAGER', 'PROJECT_LEAD', 'PROJECT_MEMBER'])) {
       clauses.push({
         departments: {
           some: {

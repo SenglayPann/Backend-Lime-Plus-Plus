@@ -123,6 +123,22 @@ export class UserVisibilityService {
       });
     }
 
+    if (actorRoles.includes('PROJECT_LEAD')) {
+      clauses.push({
+        projectMembers: {
+          some: {
+            project: {
+              members: {
+                some: {
+                  userId: actorId,
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+
     if (actorRoles.includes('PROJECT_MEMBER')) {
       clauses.push({
         projectMembers: {

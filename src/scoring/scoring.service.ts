@@ -433,7 +433,8 @@ export class ScoringService {
     if (
       actorRoles.includes('ORGANIZATION_MANAGER') ||
       actorRoles.includes('DEPARTMENT_MANAGER') ||
-      actorRoles.includes('PROJECT_MANAGER')
+      actorRoles.includes('PROJECT_MANAGER') ||
+      actorRoles.includes('PROJECT_LEAD')
     ) {
       await this.projectAccessService.assertCanManageProject(
         actorId,
@@ -459,7 +460,8 @@ export class ScoringService {
 
     if (
       actorRoles.includes('ORGANIZATION_MANAGER') ||
-      actorRoles.includes('DEPARTMENT_MANAGER')
+      actorRoles.includes('DEPARTMENT_MANAGER') ||
+      actorRoles.includes('PROJECT_MANAGER')
     ) {
       await this.projectAccessService.assertCanManageProject(
         actorId,
