@@ -123,6 +123,40 @@ describe('scope-aware access policies', () => {
         ),
       ).toEqual({ organizationId: 'org-1' });
     });
+
+    it('blocks combined ORGANIZATION_MANAGER and PROJECT_MANAGER from managing departments in unmanaged organizations', async () => {
+      // Simulate finding NO department where this user is an ORGANIZATION_MANAGER or DEPARTMENT_MANAGER
+      prisma.department.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.assertCanManageDepartment(
+          'user-1',
+          ['ORGANIZATION_MANAGER', 'PROJECT_MANAGER'],
+          'dept-in-org-b',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Verify the OR query sent to Prisma matches the expected scoped roles
+      expect(prisma.department.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'dept-in-org-b',
+          OR: [
+            {
+              organization: {
+                userRoles: {
+                  some: {
+                    userId: 'user-1',
+                    role: 'ORGANIZATION_MANAGER',
+                  },
+                },
+              },
+            },
+            // PROJECT_MANAGER is deliberately NOT included in the OR array for assertCanManageDepartment
+          ],
+        },
+        select: { id: true },
+      });
+    });
   });
 
   describe('ProjectAccessService', () => {
