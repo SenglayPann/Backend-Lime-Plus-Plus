@@ -16,6 +16,7 @@ const ROLE_RANK: Record<Role, number> = {
   PROJECT_MANAGER: 2,
   PROJECT_LEAD: 1.5,
   PROJECT_MEMBER: 1,
+  ORGANIZATION_MEMBER: 0,
 };
 
 @Injectable()
@@ -159,6 +160,15 @@ export class RoleDelegationService {
       return;
     }
 
+    if (role === PrismaRole.ORGANIZATION_MEMBER) {
+      await this.assertActorManagesOrganization(
+        actorId,
+        actorRoles,
+        organizationId!,
+      );
+      return;
+    }
+
     throw new ForbiddenException('You cannot assign this role');
   }
 
@@ -203,6 +213,15 @@ export class RoleDelegationService {
       return;
     }
 
+    if (role.role === PrismaRole.ORGANIZATION_MEMBER && role.organizationId) {
+      await this.assertActorManagesOrganization(
+        actorId,
+        actorRoles,
+        role.organizationId,
+      );
+      return;
+    }
+
     throw new ForbiddenException('You cannot remove this role');
   }
 
@@ -238,6 +257,18 @@ export class RoleDelegationService {
     if (role === PrismaRole.ORGANIZATION_MANAGER && departmentId) {
       throw new BadRequestException(
         'Organization Manager cannot have department_id',
+      );
+    }
+
+    if (role === PrismaRole.ORGANIZATION_MEMBER && !organizationId) {
+      throw new BadRequestException(
+        'Organization Member requires organization_id',
+      );
+    }
+
+    if (role === PrismaRole.ORGANIZATION_MEMBER && departmentId) {
+      throw new BadRequestException(
+        'Organization Member cannot have department_id',
       );
     }
 
@@ -338,6 +369,33 @@ export class RoleDelegationService {
     if (!department) {
       throw new ForbiddenException(
         'You do not manage the selected department organization',
+      );
+    }
+  }
+
+  private async assertActorManagesOrganization(
+    actorId: string,
+    actorRoles: Role[],
+    organizationId: string,
+  ) {
+    if (!actorRoles.includes('ORGANIZATION_MANAGER')) {
+      throw new ForbiddenException(
+        'Only organization managers can manage organization members',
+      );
+    }
+
+    const orgRole = await this.prisma.userRole.findFirst({
+      where: {
+        userId: actorId,
+        role: PrismaRole.ORGANIZATION_MANAGER,
+        organizationId,
+      },
+      select: { id: true },
+    });
+
+    if (!orgRole) {
+      throw new ForbiddenException(
+        'You do not manage the selected organization',
       );
     }
   }

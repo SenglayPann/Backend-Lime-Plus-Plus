@@ -63,6 +63,17 @@ export class OrganizationAccessService {
       });
     }
 
+    if (roles.includes('ORGANIZATION_MEMBER')) {
+      clauses.push({
+        userRoles: {
+          some: {
+            userId,
+            role: PrismaRole.ORGANIZATION_MEMBER,
+          },
+        },
+      });
+    }
+
     return this.toWhere(clauses);
   }
 

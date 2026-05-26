@@ -3,12 +3,14 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, Profile } from 'passport-github2';
 import { ConfigService } from '@nestjs/config';
 import { UsersService, GitHubProfile } from '../../users/users.service';
+import { EnrollmentService } from '../../organizations/enrollment.service';
 
 @Injectable()
 export class GitHubStrategy extends PassportStrategy(Strategy, 'github') {
   constructor(
     private configService: ConfigService,
     private usersService: UsersService,
+    private enrollmentService: EnrollmentService,
   ) {
     super({
       clientID: configService.get<string>('GITHUB_CLIENT_ID')!,
@@ -35,6 +37,10 @@ export class GitHubStrategy extends PassportStrategy(Strategy, 'github') {
       githubProfile,
       accessToken,
     );
+
+    // Eagerly check and enroll user into any whitelisted organizations
+    await this.enrollmentService.autoEnrollIfAllowlisted(user);
+
     const roles = await this.usersService.getUserRoles(user.id);
 
     return {

@@ -65,6 +65,19 @@ describe('scope-aware access policies', () => {
         ]),
       ).toEqual({});
     });
+
+    it('builds scoped organization filters for organization members', () => {
+      expect(
+        service.buildAccessibleOrganizationWhere('member', ['ORGANIZATION_MEMBER']),
+      ).toEqual({
+        userRoles: {
+          some: {
+            userId: 'member',
+            role: 'ORGANIZATION_MEMBER',
+          },
+        },
+      });
+    });
   });
 
   describe('DepartmentAccessService', () => {

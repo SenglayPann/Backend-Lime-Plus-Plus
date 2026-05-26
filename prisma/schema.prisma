@@ -18,6 +18,13 @@ enum Role {
   PROJECT_MANAGER
   PROJECT_LEAD
   PROJECT_MEMBER
+  ORGANIZATION_MEMBER
+}
+
+enum AllowlistEntryType {
+  EMAIL
+  DOMAIN
+  GITHUB_USERNAME
 }
 
 enum Platform {
@@ -67,14 +74,15 @@ enum AuditAction {
 
 // Models
 model Organization {
-  id          String       @id @default(uuid())
+  id               String                       @id @default(uuid())
   /// Normalized uniqueness is enforced by the
   /// 20260517105000_add_module_duplicate_guards migration.
-  name        String
-  licensePlan String       @map("license_plan")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  departments Department[]
-  userRoles   UserRole[]
+  name             String
+  licensePlan      String                       @map("license_plan")
+  createdAt        DateTime                     @default(now()) @map("created_at")
+  departments      Department[]
+  userRoles        UserRole[]
+  allowlistEntries OrganizationAllowlistEntry[]
 
   @@map("organizations")
 }
@@ -95,29 +103,31 @@ model Department {
 }
 
 model User {
-  id                   String              @id @default(uuid())
-  githubUserId         String              @unique @map("github_user_id")
-  githubUsername       String?             @unique @map("github_username")
-  githubAccessToken    String?             @map("github_access_token")
-  githubTokenUpdatedAt DateTime?           @map("github_token_updated_at")
-  email                String?
-  name                 String?
-  avatarUrl            String?             @map("avatar_url")
-  createdAt            DateTime            @default(now()) @map("created_at")
-  userRoles            UserRole[]
-  projectMembers       ProjectMember[]
-  assignedTasks        Task[]
-  authoredPRs          PullRequest[]
-  prReviews            PrReview[]
-  contributionEvents   ContributionEvent[]
-  contributionScores   ContributionScore[]
-  scoreOverrides       ScoreOverride[]     @relation("OverriddenUser")
-  overridesPerformed   ScoreOverride[]     @relation("OverriddenBy")
-  auditLogs            AuditLog[]
-  authHandoffCodes     AuthHandoffCode[]
-  attachedProjects     Project[]           @relation("ProjectAttacher")
-  createdProjects      Project[]           @relation("ProjectCreator")
-  refreshTokens        RefreshToken[]
+  id                        String                       @id @default(uuid())
+  githubUserId              String                       @unique @map("github_user_id")
+  githubUsername            String?                      @unique @map("github_username")
+  githubAccessToken         String?                      @map("github_access_token")
+  githubTokenUpdatedAt      DateTime?                    @map("github_token_updated_at")
+  email                     String?
+  name                      String?
+  avatarUrl                 String?                      @map("avatar_url")
+  createdAt                 DateTime                     @default(now()) @map("created_at")
+  userRoles                 UserRole[]
+  projectMembers            ProjectMember[]
+  assignedTasks             Task[]
+  authoredPRs               PullRequest[]
+  prReviews                 PrReview[]
+  contributionEvents        ContributionEvent[]
+  contributionScores        ContributionScore[]
+  scoreOverrides            ScoreOverride[]              @relation("OverriddenUser")
+  overridesPerformed        ScoreOverride[]              @relation("OverriddenBy")
+  auditLogs                 AuditLog[]
+  authHandoffCodes          AuthHandoffCode[]
+  attachedProjects          Project[]                    @relation("ProjectAttacher")
+  createdProjects           Project[]                    @relation("ProjectCreator")
+  refreshTokens             RefreshToken[]
+  addedAllowlistEntries     OrganizationAllowlistEntry[] @relation("AllowlistAdder")
+  claimedAllowlistEntries   OrganizationAllowlistEntry[] @relation("AllowlistClaimer")
 
   @@map("users")
 }
@@ -345,4 +355,22 @@ model RefreshToken {
   @@index([expiresAt])
   @@index([browserId])
   @@map("refresh_tokens")
+}
+
+model OrganizationAllowlistEntry {
+  id              String             @id @default(uuid())
+  organizationId  String             @map("organization_id")
+  type            AllowlistEntryType
+  value           String
+  addedById       String             @map("added_by_id")
+  claimedByUserId String?            @map("claimed_by_user_id")
+  claimedAt       DateTime?          @map("claimed_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+
+  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  addedBy         User               @relation("AllowlistAdder", fields: [addedById], references: [id])
+  claimedByUser   User?              @relation("AllowlistClaimer", fields: [claimedByUserId], references: [id])
+
+  @@unique([organizationId, type, value])
+  @@map("organization_allowlist_entries")
 }

@@ -110,6 +110,33 @@ describe('RoleDelegationService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('rejects organization member role without organization scope', async () => {
+    await expect(
+      service.assignUserRole(
+        'admin',
+        ['ADMIN'],
+        'target',
+        'ORGANIZATION_MEMBER',
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('allows organization manager to assign organization member inside managed organization', async () => {
+    prisma.userRole.findFirst.mockResolvedValueOnce({ id: 'org-mgr-role' }); // assertActorManagesOrganization
+    prisma.userRole.findFirst.mockResolvedValueOnce(null); // existing role check
+    prisma.userRole.create.mockResolvedValueOnce({ id: 'org-member-role' });
+
+    await expect(
+      service.assignUserRole(
+        'org-manager',
+        ['ORGANIZATION_MANAGER'],
+        'target',
+        'ORGANIZATION_MEMBER',
+        'org-1',
+      ),
+    ).resolves.toEqual({ id: 'org-member-role' });
+  });
+
   it('blocks duplicate scoped role assignment', async () => {
     prisma.userRole.findFirst.mockResolvedValueOnce({ id: 'existing-role' });
 

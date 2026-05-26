@@ -134,6 +134,14 @@ describe('RolesGuard', () => {
       const context = createMockContext(['PROJECT_MANAGER']);
       expect(guard.canActivate(context)).toBe(true);
     });
+
+    it('should satisfy ORGANIZATION_MEMBER requirement', () => {
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockReturnValue(['ORGANIZATION_MEMBER'] as Role[]);
+      const context = createMockContext(['PROJECT_MEMBER']);
+      expect(guard.canActivate(context)).toBe(true);
+    });
   });
 
   describe('multiple roles', () => {

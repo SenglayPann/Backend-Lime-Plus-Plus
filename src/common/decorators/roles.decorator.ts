@@ -7,7 +7,8 @@ export type Role =
   | 'DEPARTMENT_MANAGER'
   | 'PROJECT_MANAGER'
   | 'PROJECT_LEAD'
-  | 'PROJECT_MEMBER';
+  | 'PROJECT_MEMBER'
+  | 'ORGANIZATION_MEMBER';
 
 export const ROLES_KEY = 'roles';
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
