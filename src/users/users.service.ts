@@ -255,6 +255,14 @@ export class UsersService {
       actorId,
       actorRoles,
     );
+    const visibleUserRoleWhere = this.buildVisibleUserRoleWhere(
+      actorId,
+      actorRoles,
+    );
+    const visibleProjectMemberWhere = this.buildVisibleProjectMemberWhere(
+      actorId,
+      actorRoles,
+    );
 
     const users = await this.prisma.user.findMany({
       where: {
@@ -277,8 +285,12 @@ export class UsersService {
         avatarUrl: true,
         createdAt: true,
         userRoles: {
+          // Scope the embedded role list to entries the actor is allowed to
+          // see. Without the visibility clause, this would leak orgs/depts
+          // that a multi-tenant PM happens to belong to but the actor has no
+          // role in.
           where: {
-            role: Role.PROJECT_MANAGER,
+            AND: [{ role: Role.PROJECT_MANAGER }, visibleUserRoleWhere],
           },
           include: {
             organization: { select: { id: true, name: true } },
@@ -286,8 +298,10 @@ export class UsersService {
           },
         },
         projectMembers: {
+          // Same defence for activeProjectsCount: only count memberships in
+          // projects the actor is allowed to see.
           where: {
-            role: Role.PROJECT_MANAGER,
+            AND: [{ role: Role.PROJECT_MANAGER }, visibleProjectMemberWhere],
           },
           select: {
             id: true,

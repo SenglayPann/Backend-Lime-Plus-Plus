@@ -313,4 +313,102 @@ describe('UsersService', () => {
       });
     });
   });
+
+  describe('getProjectManagers', () => {
+    it('scopes embedded userRoles and projectMembers to the actor visibility (non-admin)', async () => {
+      // Non-admin actor: visibility helpers return non-empty clauses so we
+      // can assert they're propagated into the embedded selects.
+      mockUserVisibilityService.buildVisibleUserWhere.mockReturnValue({
+        id: 'visible',
+      });
+      mockProjectAccessService.buildAccessibleProjectWhere.mockReturnValue({
+        id: 'accessible-project',
+      });
+      mockPrismaService.user.findMany.mockResolvedValue([]);
+
+      await service.getProjectManagers('actor-1', ['ORGANIZATION_MANAGER']);
+
+      expect(mockPrismaService.user.findMany).toHaveBeenCalledTimes(1);
+      const call = mockPrismaService.user.findMany.mock.calls[0][0];
+
+      // Outer where: visible-users + has-PROJECT_MANAGER-role
+      expect(call.where).toEqual({
+        AND: [
+          { id: 'visible' },
+          { userRoles: { some: { role: 'PROJECT_MANAGER' } } },
+        ],
+      });
+
+      // Embedded userRoles must AND a scope clause — not just role filter
+      expect(call.select.userRoles.where).toEqual({
+        AND: [
+          { role: 'PROJECT_MANAGER' },
+          expect.objectContaining({ OR: expect.any(Array) }),
+        ],
+      });
+
+      // Embedded projectMembers must AND a project-scope clause
+      expect(call.select.projectMembers.where).toEqual({
+        AND: [
+          { role: 'PROJECT_MANAGER' },
+          { project: { id: 'accessible-project' } },
+        ],
+      });
+    });
+
+    it('does not scope further for ADMIN actors (visibility helpers return {})', async () => {
+      mockUserVisibilityService.buildVisibleUserWhere.mockReturnValue({});
+      mockPrismaService.user.findMany.mockResolvedValue([]);
+
+      await service.getProjectManagers('admin', ['ADMIN']);
+
+      const call = mockPrismaService.user.findMany.mock.calls[0][0];
+      expect(call.select.userRoles.where).toEqual({
+        AND: [{ role: 'PROJECT_MANAGER' }, {}],
+      });
+      expect(call.select.projectMembers.where).toEqual({
+        AND: [{ role: 'PROJECT_MANAGER' }, {}],
+      });
+    });
+
+    it('maps response to id/roles/activeProjectsCount shape', async () => {
+      mockUserVisibilityService.buildVisibleUserWhere.mockReturnValue({});
+      mockPrismaService.user.findMany.mockResolvedValue([
+        {
+          id: 'pm-1',
+          name: 'Grace Hopper',
+          email: 'grace@example.com',
+          githubUsername: 'grace',
+          avatarUrl: null,
+          createdAt: new Date('2026-01-01'),
+          userRoles: [
+            {
+              id: 'role-1',
+              role: 'PROJECT_MANAGER',
+              organization: null,
+              department: { id: 'dept-1', name: 'Eng' },
+            },
+          ],
+          projectMembers: [{ id: 'pm-row-1' }, { id: 'pm-row-2' }],
+        },
+      ]);
+
+      const result = await service.getProjectManagers('admin', ['ADMIN']);
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: 'pm-1',
+          name: 'Grace Hopper',
+          activeProjectsCount: 2,
+          roles: [
+            expect.objectContaining({
+              id: 'role-1',
+              role: 'PROJECT_MANAGER',
+              department: { id: 'dept-1', name: 'Eng' },
+            }),
+          ],
+        }),
+      ]);
+    });
+  });
 });
