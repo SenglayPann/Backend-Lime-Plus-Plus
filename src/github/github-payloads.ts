@@ -107,6 +107,32 @@ export interface GitHubProjectV2ItemEventPayload extends GitHubWebhookPayload {
   };
 }
 
+export interface GitHubIssuePayload {
+  id: number;
+  node_id: string;
+  number: number;
+  title: string;
+  body: string | null;
+  state: 'open' | 'closed';
+  html_url: string;
+  user: GitHubUserPayload;
+  assignees: GitHubUserPayload[];
+  labels?: Array<{ id: number; name: string; color?: string }>;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubIssuesEventPayload extends GitHubWebhookPayload {
+  issue: GitHubIssuePayload;
+  assignee?: GitHubUserPayload;
+  label?: { id: number; name: string; color?: string };
+  changes?: {
+    title?: { from: string };
+    body?: { from: string };
+  };
+}
+
 export interface GitHubPushEventPayload extends GitHubWebhookPayload {
   ref: string;
   before: string;

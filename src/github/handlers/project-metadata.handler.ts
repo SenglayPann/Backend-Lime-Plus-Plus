@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Project } from '../../generated/prisma';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
@@ -9,6 +10,7 @@ import {
   GitHubProjectV2Payload,
   GitHubUserPayload,
 } from '../github-payloads';
+import type { ProjectUpdatePayload } from '../project-events.service';
 
 /**
  * Project Metadata Handler (spec §9)
@@ -27,7 +29,17 @@ export class ProjectMetadataHandler {
   constructor(
     private prisma: PrismaService,
     private projectLockGuard: ProjectLockGuardService,
+    private eventEmitter: EventEmitter2,
   ) {}
+
+  private emitProjectUpdated(projectId: string) {
+    const payload: ProjectUpdatePayload = {
+      projectId,
+      kind: 'project_metadata',
+      at: new Date().toISOString(),
+    };
+    this.eventEmitter.emit('project.updated', payload);
+  }
 
   /**
    * Main entry point for projects_v2 webhook events
@@ -104,6 +116,7 @@ export class ProjectMetadataHandler {
         this.logger.log(
           `Project ${project.id} title synced: "${project.name}" → "${newTitle}"`,
         );
+        this.emitProjectUpdated(project.id);
       }
     }
   }
@@ -142,6 +155,7 @@ export class ProjectMetadataHandler {
     }
 
     this.logger.warn(`Project ${project.id} archived — GitHub Project deleted`);
+    this.emitProjectUpdated(project.id);
   }
 
   /**
@@ -179,6 +193,7 @@ export class ProjectMetadataHandler {
     }
 
     this.logger.log(`Project ${project.id} locked — GitHub Project closed`);
+    this.emitProjectUpdated(project.id);
   }
 
   /**

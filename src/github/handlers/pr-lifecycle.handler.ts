@@ -14,6 +14,7 @@ import {
 } from '../github-payloads';
 import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
 import { findOrCreateGitHubUser } from '../github-user-resolution';
+import type { ProjectUpdatePayload } from '../project-events.service';
 
 /**
  * PR Lifecycle Handler (spec §5, §6)
@@ -41,6 +42,15 @@ export class PrLifecycleHandler {
     private eventEmitter: EventEmitter2,
     private projectLockGuard: ProjectLockGuardService,
   ) {}
+
+  private emitProjectUpdated(projectId: string) {
+    const payload: ProjectUpdatePayload = {
+      projectId,
+      kind: 'pull_request',
+      at: new Date().toISOString(),
+    };
+    this.eventEmitter.emit('project.updated', payload);
+  }
 
   /**
    * Main entry point for pull_request webhook events
@@ -208,6 +218,7 @@ export class PrLifecycleHandler {
     this.logger.log(
       `PR #${pr.number} persisted (validation: ${validationStatus}, task: ${taskId ?? 'none'})`,
     );
+    this.emitProjectUpdated(project.id);
 
     // Apply GitHub Commit Status Check
     if (
@@ -297,6 +308,7 @@ export class PrLifecycleHandler {
           mergedAt: isMerged && pr.merged_at ? new Date(pr.merged_at) : null,
         },
       });
+      this.emitProjectUpdated(project.id);
 
       if (isMerged && task && task.assigneeId === author.id) {
         const mergedAt = pr.merged_at ? new Date(pr.merged_at) : new Date();
@@ -322,6 +334,7 @@ export class PrLifecycleHandler {
         data: { status: 'CLOSED' },
       });
       this.logger.log(`PR #${pr.number} closed without merge`);
+      this.emitProjectUpdated(project.id);
     }
   }
 
@@ -347,6 +360,7 @@ export class PrLifecycleHandler {
           : new Date(),
       },
     });
+    this.emitProjectUpdated(project.id);
 
     if (!existingPr.taskId || !existingPr.task) {
       this.logger.warn(

@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditAction, Project } from '../../generated/prisma';
 import { safeUserSelect } from '../../common/serialization/safe-user-select';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import type { ProjectUpdatePayload } from '../project-events.service';
 import {
   GitHubProjectV2ItemEventPayload,
   GitHubProjectV2ItemPayload,
@@ -32,7 +34,17 @@ export class TaskSyncHandler {
   constructor(
     private prisma: PrismaService,
     private projectLockGuard: ProjectLockGuardService,
+    private eventEmitter: EventEmitter2,
   ) {}
+
+  private emitProjectUpdated(projectId: string) {
+    const payload: ProjectUpdatePayload = {
+      projectId,
+      kind: 'task',
+      at: new Date().toISOString(),
+    };
+    this.eventEmitter.emit('project.updated', payload);
+  }
 
   /**
    * Main entry point for projects_v2_item webhook events
@@ -161,6 +173,7 @@ export class TaskSyncHandler {
     this.logger.log(
       `Task ${externalTaskId} created for project ${project.id}${assignee ? '' : ' without assignee'}`,
     );
+    this.emitProjectUpdated(project.id);
   }
 
   /**
@@ -202,6 +215,8 @@ export class TaskSyncHandler {
       return;
     }
 
+    let mutated = false;
+
     // Handle status field change
     if (changes.field_value?.field_name === 'Status') {
       const newStatus = this.mapStatus(changes.field_value.to?.name);
@@ -210,6 +225,7 @@ export class TaskSyncHandler {
           where: { id: task.id },
           data: { status: newStatus },
         });
+        mutated = true;
         const actor = await this.findOrCreateUser(
           String(sender.id),
           sender.login,
@@ -267,6 +283,7 @@ export class TaskSyncHandler {
           where: { id: task.id },
           data: { assigneeId: newAssigneeId },
         });
+        mutated = true;
 
         // Log to audit_logs (spec §8 strict rules)
         await this.prisma.auditLog.create({
@@ -295,6 +312,10 @@ export class TaskSyncHandler {
           `Task ${externalTaskId} assignee changed: ${previousAssigneeName} → ${newAssigneeName}`,
         );
       }
+    }
+
+    if (mutated) {
+      this.emitProjectUpdated(project.id);
     }
   }
 
@@ -353,6 +374,7 @@ export class TaskSyncHandler {
     this.logger.warn(
       `Task ${externalTaskId} soft-deleted (set to BLOCKED) — item removed from GitHub Project`,
     );
+    this.emitProjectUpdated(project.id);
   }
 
   /**

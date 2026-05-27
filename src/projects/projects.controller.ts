@@ -7,6 +7,8 @@ import {
   Body,
   Param,
   Query,
+  Sse,
+  MessageEvent,
   UseGuards,
   Request,
   Headers,
@@ -18,6 +20,7 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
+import { Observable } from 'rxjs';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { AttachGitHubDto } from './dto/attach-github.dto';
@@ -26,6 +29,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { ProjectAccessService } from '../common/access/project-access.service';
+import { ProjectEventsService } from '../github/project-events.service';
 import type { RequestWithUser } from '../common/types/request.interface';
 
 @ApiTags('Projects')
@@ -33,7 +38,11 @@ import type { RequestWithUser } from '../common/types/request.interface';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(
+    private readonly projectsService: ProjectsService,
+    private readonly projectAccessService: ProjectAccessService,
+    private readonly projectEventsService: ProjectEventsService,
+  ) {}
 
   @Post()
   @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER)
@@ -78,6 +87,29 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Get project details' })
   async findOne(@Param('id') id: string, @Request() req: RequestWithUser) {
     return this.projectsService.findOne(id, req.user.id, req.user.roles);
+  }
+
+  /**
+   * Server-Sent Events stream for live project updates.
+   *
+   * The browser EventSource API cannot set custom headers, so the JWT is
+   * passed via the `access_token` query parameter — the JwtStrategy accepts
+   * either source. Subscribers are filtered to a single project channel by
+   * the path param; cross-project leakage is impossible.
+   */
+  @Sse(':id/events')
+  @Roles(Role.PROJECT_MEMBER)
+  @ApiOperation({ summary: 'Subscribe to live project updates (SSE)' })
+  async streamProjectEvents(
+    @Param('id') id: string,
+    @Request() req: RequestWithUser,
+  ): Promise<Observable<MessageEvent>> {
+    await this.projectAccessService.assertCanViewProject(
+      req.user.id,
+      req.user.roles,
+      id,
+    );
+    return this.projectEventsService.stream(id);
   }
 
   @Get(':id/members')

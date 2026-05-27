@@ -6,6 +6,7 @@ import { ProjectLockGuardService } from '../../common/access/project-lock-guard.
 import { repositoryProjectWhere } from '../repository-normalization';
 import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
 import { findOrCreateGitHubUser } from '../github-user-resolution';
+import type { ProjectUpdatePayload } from '../project-events.service';
 
 /**
  * PR Review Handler (spec §7)
@@ -141,6 +142,12 @@ export class PrReviewHandler {
     this.logger.log(
       `Review persisted: ${reviewState} on PR #${pull_request.number} by ${review.user.login}`,
     );
+    const projectUpdate: ProjectUpdatePayload = {
+      projectId: project.id,
+      kind: 'pr_review',
+      at: new Date().toISOString(),
+    };
+    this.eventEmitter.emit('project.updated', projectUpdate);
 
     // Emit contribution event only for APPROVED reviews
     if (reviewState === 'APPROVED') {

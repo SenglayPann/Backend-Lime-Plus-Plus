@@ -21,6 +21,7 @@ import {
   TaskSyncHandler,
   ProjectMetadataHandler,
   PushHandler,
+  IssuesHandler,
 } from './handlers';
 
 describe('WebhooksService', () => {
@@ -42,6 +43,7 @@ describe('WebhooksService', () => {
   const mockTaskSyncHandler = { handle: jest.fn() };
   const mockProjectMetadataHandler = { handle: jest.fn() };
   const mockPushHandler = { handle: jest.fn() };
+  const mockIssuesHandler = { handle: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -56,6 +58,7 @@ describe('WebhooksService', () => {
           useValue: mockProjectMetadataHandler,
         },
         { provide: PushHandler, useValue: mockPushHandler },
+        { provide: IssuesHandler, useValue: mockIssuesHandler },
         {
           provide: ConfigService,
           useValue: {
@@ -114,6 +117,7 @@ describe('WebhooksService', () => {
         mockTaskSyncHandler as any,
         mockProjectMetadataHandler as any,
         mockPushHandler as any,
+        mockIssuesHandler as any,
       );
 
       try {

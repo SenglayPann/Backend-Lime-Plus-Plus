@@ -8,6 +8,7 @@ import {
   TaskSyncHandler,
   ProjectMetadataHandler,
   PushHandler,
+  IssuesHandler,
 } from './handlers';
 import {
   GitHubPullRequestEventPayload,
@@ -15,6 +16,7 @@ import {
   GitHubProjectV2ItemEventPayload,
   GitHubProjectV2EventPayload,
   GitHubPushEventPayload,
+  GitHubIssuesEventPayload,
 } from './github-payloads';
 
 export interface WebhookEvent {
@@ -43,6 +45,7 @@ export class WebhooksService {
     private taskSyncHandler: TaskSyncHandler,
     private projectMetadataHandler: ProjectMetadataHandler,
     private pushHandler: PushHandler,
+    private issuesHandler: IssuesHandler,
   ) {}
 
   /**
@@ -191,6 +194,11 @@ export class WebhooksService {
       case 'push':
         await this.pushHandler.handle(
           event.payload as unknown as GitHubPushEventPayload,
+        );
+        break;
+      case 'issues':
+        await this.issuesHandler.handle(
+          event.payload as unknown as GitHubIssuesEventPayload,
         );
         break;
       case 'ping':

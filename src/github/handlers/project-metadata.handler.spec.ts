@@ -11,6 +11,7 @@ jest.mock('@octokit/auth-app', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectMetadataHandler } from './project-metadata.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
@@ -29,6 +30,9 @@ describe('ProjectMetadataHandler', () => {
   const mockProjectLockGuard = {
     isLocked: jest.fn(),
   };
+  const mockEventEmitter = {
+    emit: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +40,7 @@ describe('ProjectMetadataHandler', () => {
         ProjectMetadataHandler,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ProjectLockGuardService, useValue: mockProjectLockGuard },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 

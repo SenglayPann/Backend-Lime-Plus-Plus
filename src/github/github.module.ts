@@ -4,6 +4,7 @@ import { GitHubService } from './github.service';
 import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 import { WebhookProcessor } from './webhook.processor';
+import { ProjectEventsService } from './project-events.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ProjectAccessModule } from '../common/access/project-access.module';
 import {
@@ -12,6 +13,7 @@ import {
   TaskSyncHandler,
   ProjectMetadataHandler,
   PushHandler,
+  IssuesHandler,
 } from './handlers';
 
 @Module({
@@ -36,12 +38,14 @@ import {
     GitHubService,
     WebhooksService,
     WebhookProcessor,
+    ProjectEventsService,
     PrLifecycleHandler,
     PrReviewHandler,
     TaskSyncHandler,
     ProjectMetadataHandler,
     PushHandler,
+    IssuesHandler,
   ],
-  exports: [GitHubService, WebhooksService],
+  exports: [GitHubService, WebhooksService, ProjectEventsService],
 })
 export class GitHubModule {}
