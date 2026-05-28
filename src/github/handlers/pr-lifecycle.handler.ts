@@ -141,7 +141,8 @@ export class PrLifecycleHandler {
         `No task ID found in PR #${pr.number} title/body — marked INVALID`,
       );
       validationStatus = 'INVALID';
-      statusMessage = 'No task ID (e.g. TASK-42) found in PR title or body';
+      statusMessage =
+        'No task reference found. Add "TASK-42" or "Closes #42" to the PR title or description.';
     } else {
       task = (await this.prisma.task.findUnique({
         where: {
@@ -462,12 +463,38 @@ export class PrLifecycleHandler {
    *
    * @returns Task ID string (e.g., "TASK-42") or null
    */
+  /**
+   * Extract the linked task ID from a PR's title and body.
+   *
+   * Two patterns are accepted, in order of priority:
+   *
+   *   1. `TASK-<n>` anywhere in title or body (Lime++ convention).
+   *   2. GitHub-native closure keywords: `close[sd]?`, `fix(e[sd]|ed)?`,
+   *      `resolve[sd]?` followed by `#<n>`. This is the same syntax GitHub
+   *      uses to auto-close an issue when a PR is merged — students can
+   *      write idiomatic PR descriptions like "Closes #42" and still get
+   *      credit, without having to remember the TASK-N convention.
+   *
+   * The closure pattern returns `TASK-<n>` because IssuesHandler stores
+   * tasks under `externalTaskId = "TASK-" + issue.number`.
+   */
   parseTaskId(title: string, body: string | null): string | null {
-    const regex = /\bTASK-([A-Za-z0-9_-]+)\b/i;
-    const titleMatch = title.match(regex);
+    // Priority 1: explicit Lime++ TASK-N reference.
+    const taskRegex = /\bTASK-([A-Za-z0-9_-]+)\b/i;
+    const titleMatch = title.match(taskRegex);
     if (titleMatch) return `TASK-${titleMatch[1]}`;
-    const bodyMatch = body?.match(regex);
-    if (bodyMatch) return `TASK-${bodyMatch[1]}`;
+    const bodyTaskMatch = body?.match(taskRegex);
+    if (bodyTaskMatch) return `TASK-${bodyTaskMatch[1]}`;
+
+    // Priority 2: GitHub closure keyword + issue number.
+    // Matches "Closes #42", "fix #5", "Resolved #100", etc.
+    const closureRegex =
+      /\b(?:close[sd]?|fix(?:e[sd]|ed)?|resolve[sd]?)\s+#(\d+)\b/i;
+    const titleCloseMatch = title.match(closureRegex);
+    if (titleCloseMatch) return `TASK-${titleCloseMatch[1]}`;
+    const bodyCloseMatch = body?.match(closureRegex);
+    if (bodyCloseMatch) return `TASK-${bodyCloseMatch[1]}`;
+
     return null;
   }
 

@@ -85,6 +85,52 @@ describe('PrLifecycleHandler', () => {
     expect(handler.parseTaskId('Missing', 'Also missing')).toBeNull();
   });
 
+  describe('parseTaskId GitHub closure-keyword fallback', () => {
+    it('matches "Closes #N" in the body', () => {
+      expect(handler.parseTaskId('Add login screen', 'Closes #42')).toBe(
+        'TASK-42',
+      );
+    });
+
+    it('matches "Fixes #N" in the body case-insensitively', () => {
+      expect(handler.parseTaskId('Some title', 'fixes #7')).toBe('TASK-7');
+      expect(handler.parseTaskId('Some title', 'FIX #7')).toBe('TASK-7');
+    });
+
+    it('matches "Resolves #N" / "Resolved #N"', () => {
+      expect(handler.parseTaskId('x', 'Resolves #100')).toBe('TASK-100');
+      expect(handler.parseTaskId('x', 'Resolved #100')).toBe('TASK-100');
+    });
+
+    it('matches in the title', () => {
+      expect(handler.parseTaskId('Closes #5: add login', null)).toBe('TASK-5');
+    });
+
+    it('prefers TASK-N over Closes #N when both appear', () => {
+      // TASK-N has priority — preserves existing behaviour.
+      expect(
+        handler.parseTaskId('TASK-77 add login', 'Closes #42'),
+      ).toBe('TASK-77');
+    });
+
+    it('does not match without a closure keyword', () => {
+      expect(handler.parseTaskId('Mention of #42 in title', null)).toBeNull();
+      expect(handler.parseTaskId('x', 'See issue #42 for context')).toBeNull();
+    });
+
+    it('does not match partial words like "closing on #42"', () => {
+      expect(
+        handler.parseTaskId('x', 'Closing on #42 to keep things tidy'),
+      ).toBeNull();
+    });
+
+    it('takes the first match when multiple keywords are present', () => {
+      expect(handler.parseTaskId('x', 'Closes #1 and fixes #2')).toBe(
+        'TASK-1',
+      );
+    });
+  });
+
   it('should ignore invalid payloads', async () => {
     await handler.handle({});
     expect(mockPrismaService.project.findFirst).not.toHaveBeenCalled();
