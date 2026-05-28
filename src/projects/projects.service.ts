@@ -55,9 +55,26 @@ export class ProjectsService {
       dto.department_id,
     );
 
+    // Resolve the project's organization once so we can enforce
+    // org-affiliation on both PM and PL below.
+    const projectDepartment = await this.prisma.department.findUnique({
+      where: { id: dto.department_id },
+      select: { id: true, organizationId: true },
+    });
+    if (!projectDepartment) {
+      throw new NotFoundException('Department not found');
+    }
+    const projectOrganizationId = projectDepartment.organizationId;
+
     const projectManagerId = dto.project_manager_id ?? actorId;
     await this.assertProjectManagerAssignable(
       projectManagerId,
+      actorId,
+      actorRoles,
+    );
+    await this.assertUserBelongsToProjectOrganization(
+      projectManagerId,
+      projectOrganizationId,
       actorId,
       actorRoles,
     );
@@ -74,6 +91,12 @@ export class ProjectsService {
     if (!projectLead) {
       throw new NotFoundException('Project Lead user not found');
     }
+    await this.assertUserBelongsToProjectOrganization(
+      projectLead.id,
+      projectOrganizationId,
+      actorId,
+      actorRoles,
+    );
 
     const evaluationWindow = this.resolveEvaluationWindow(
       dto.evaluation_window,
@@ -369,6 +392,65 @@ export class ProjectsService {
     }
   }
 
+  /**
+   * Defense in depth for project-creation and member-upsert flows: a user
+   * assigned to a project must already be affiliated with the project's
+   * organization (via any UserRole in that org/department, or any
+   * ProjectMember row in a project under that org).
+   *
+   * The visibility check elsewhere (assertProjectMemberTargetCanBeAssigned)
+   * only verifies that the actor is allowed to see the target user, which
+   * for a multi-org actor includes users from other orgs they manage.
+   * Without this check, an org-A manager who also manages org B could
+   * silently assign an org-B-only user as PM/PL/member of an org-A project
+   * — breaking the org boundary.
+   *
+   * Bypassed for ADMIN, and for self-assignment so an org manager not yet
+   * affiliated with the org can still become its first PM.
+   */
+  private async assertUserBelongsToProjectOrganization(
+    userId: string,
+    organizationId: string,
+    actorId: string,
+    actorRoles: Role[],
+  ) {
+    if (actorRoles.includes('ADMIN')) return;
+    if (userId === actorId) return;
+    if (!organizationId) return;
+
+    const affiliated = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        OR: [
+          {
+            userRoles: {
+              some: {
+                OR: [
+                  { organizationId },
+                  { department: { organizationId } },
+                ],
+              },
+            },
+          },
+          {
+            projectMembers: {
+              some: {
+                project: { department: { organizationId } },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!affiliated) {
+      throw new ForbiddenException(
+        'Selected user is not affiliated with this project\'s organization',
+      );
+    }
+  }
+
   async findAll(
     departmentId: string | undefined,
     actorId: string,
@@ -518,6 +600,24 @@ export class ProjectsService {
     await this.assertProjectMemberTargetCanBeAssigned(
       id,
       userId,
+      actorId,
+      actorRoles,
+    );
+
+    // Resolve project's organization to enforce org-affiliation on the
+    // user being assigned (defense in depth: the visibility check above
+    // accepts any user the actor can see, including users from other orgs
+    // the actor manages but which this project does not belong to).
+    const projectScope = await this.prisma.project.findUnique({
+      where: { id },
+      select: { department: { select: { organizationId: true } } },
+    });
+    if (!projectScope) {
+      throw new NotFoundException('Project not found');
+    }
+    await this.assertUserBelongsToProjectOrganization(
+      userId,
+      projectScope.department.organizationId,
       actorId,
       actorRoles,
     );

@@ -22,6 +22,7 @@ describe('ProjectsService project membership', () => {
     scoreOverride: { count: jest.fn() },
     contributionEvent: { count: jest.fn() },
     user: { findUnique: jest.fn(), findFirst: jest.fn() },
+    department: { findUnique: jest.fn() },
     project: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
@@ -99,7 +100,23 @@ describe('ProjectsService project membership', () => {
     usersService.getGitHubAccessToken.mockResolvedValue(null);
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1', githubUsername: 'student-lead', name: 'Student' });
     prisma.user.findFirst.mockResolvedValue({ id: 'user-1' });
-    prisma.project.findUnique.mockResolvedValue(null);
+    prisma.department.findUnique.mockResolvedValue({
+      id: 'dept-1',
+      organizationId: 'org-1',
+    });
+    // Multiple call sites use prisma.project.findUnique with different
+    // shapes. Discriminate by the where clause so each path gets the right
+    // shape: the repository-conflict check needs null; the org-scope
+    // lookup in upsertMember needs the department.organizationId.
+    prisma.project.findUnique.mockImplementation(({ where }: any) => {
+      if (where?.githubRepositoryId) return Promise.resolve(null);
+      if (where?.id) {
+        return Promise.resolve({
+          department: { organizationId: 'org-1' },
+        });
+      }
+      return Promise.resolve(null);
+    });
     prisma.project.findFirst.mockResolvedValue({ id: 'project-1' });
     prisma.project.findMany.mockResolvedValue([]);
     prisma.project.create.mockResolvedValue({ id: 'project-1' });
@@ -428,5 +445,100 @@ describe('ProjectsService project membership', () => {
     await expect(
       service.lockProject('project-1', 'manager', ['PROJECT_MANAGER']),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  describe('assertUserBelongsToProjectOrganization (via create + upsertMember)', () => {
+    const createDto = {
+      department_id: 'dept-1',
+      name: 'Capstone',
+      repository: 'owner/repo',
+      github_project_id: 'PVT_1',
+      project_lead_id: 'lead-1',
+    };
+
+    /**
+     * The service issues two distinct prisma.user.findFirst calls:
+     * - Visibility check  → `where: { AND: [{ id }, <visibility clause>] }`
+     * - Affiliation check → `where: { id, OR: [...] }`
+     *
+     * This helper builds a mockImplementation that lets the test author
+     * declare which user IDs are affiliated; visibility always passes.
+     */
+    function setupFindFirst(affiliatedIds: Set<string>) {
+      prisma.user.findFirst.mockImplementation(({ where }: any) => {
+        if (where?.AND) {
+          // Visibility check — always say yes
+          const id = where.AND[0].id;
+          return Promise.resolve({ id });
+        }
+        if (where?.OR && where?.id) {
+          return Promise.resolve(
+            affiliatedIds.has(where.id) ? { id: where.id } : null,
+          );
+        }
+        return Promise.resolve({ id: where?.id ?? 'unknown' });
+      });
+    }
+
+    it('rejects creating a project when the project lead is not affiliated with the org', async () => {
+      // Project lead id resolves to 'user-1' (from prisma.user.findUnique default).
+      // Mark no one as affiliated; the project-lead affiliation check fails.
+      // PM defaults to actor 'creator' → bypassed via self.
+      setupFindFirst(new Set());
+
+      await expect(
+        service.create(createDto, 'creator', ['ORGANIZATION_MANAGER'], 'gh-token'),
+      ).rejects.toThrow(/not affiliated/i);
+      expect(prisma.project.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts creation when both PM (self) and PL are affiliated', async () => {
+      // PL id ('user-1' per the mock) is affiliated → check passes.
+      setupFindFirst(new Set(['user-1']));
+
+      await expect(
+        service.create(createDto, 'creator', ['ORGANIZATION_MANAGER'], 'gh-token'),
+      ).resolves.toBeDefined();
+      expect(prisma.project.create).toHaveBeenCalled();
+    });
+
+    it('rejects upserting a project member when the target user is not affiliated', async () => {
+      setupFindFirst(new Set()); // nobody affiliated
+
+      await expect(
+        service.upsertMember(
+          'project-1',
+          'outside-user',
+          'PROJECT_MEMBER',
+          'manager',
+          ['PROJECT_MANAGER'],
+        ),
+      ).rejects.toThrow(/not affiliated/i);
+      expect(prisma.projectMember.upsert).not.toHaveBeenCalled();
+    });
+
+    it('bypasses the affiliation check for ADMIN actors', async () => {
+      // No one affiliated, but admin is bypassed inside the assertion.
+      setupFindFirst(new Set());
+
+      await expect(
+        service.create(createDto, 'admin', ['ADMIN'], 'gh-token'),
+      ).resolves.toBeDefined();
+      expect(prisma.project.create).toHaveBeenCalled();
+    });
+
+    it('bypasses the affiliation check for self-assignment (actorId === userId)', async () => {
+      // PM = creator (self → bypassed). PL = 'user-1' is affiliated.
+      setupFindFirst(new Set(['user-1']));
+
+      await expect(
+        service.create(
+          { ...createDto, project_manager_id: 'creator' },
+          'creator',
+          ['ORGANIZATION_MANAGER'],
+          'gh-token',
+        ),
+      ).resolves.toBeDefined();
+    });
   });
 });
