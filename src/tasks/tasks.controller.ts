@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Patch,
   Post,
   Body,
   Param,
@@ -17,6 +18,7 @@ import {
 import { TasksService } from './tasks.service';
 import { AssignTaskDto } from './dto/assign-task.dto';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
+import { UpdateTaskDto } from './dto/update-task.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../generated/prisma';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -60,6 +62,32 @@ export class TasksController {
     return this.tasksService.assignTask(
       id,
       dto.assignee_id,
+      req.user.id,
+      req.user.roles,
+    );
+  }
+
+  @Patch(':id')
+  @Roles(Role.PROJECT_MANAGER)
+  @ApiOperation({
+    summary: 'Update task difficulty and/or due date (Project Manager+)',
+  })
+  async updateTask(
+    @Param('id') id: string,
+    @Body() dto: UpdateTaskDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.tasksService.updateTask(
+      id,
+      {
+        difficulty: dto.difficulty,
+        dueDate:
+          dto.due_date === undefined
+            ? undefined
+            : dto.due_date === null
+              ? null
+              : new Date(dto.due_date),
+      },
       req.user.id,
       req.user.roles,
     );

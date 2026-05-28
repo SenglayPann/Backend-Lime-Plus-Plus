@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProjectAccessService } from '../common/access/project-access.service';
 import { ProjectLockGuardService } from '../common/access/project-lock-guard.service';
 import {
@@ -36,6 +37,9 @@ describe('TasksService', () => {
   const mockProjectLockGuardService = {
     assertProjectMutable: jest.fn(),
   };
+  const mockEventEmitter = {
+    emit: jest.fn(),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -44,6 +48,7 @@ describe('TasksService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ProjectAccessService, useValue: mockProjectAccessService },
         { provide: ProjectLockGuardService, useValue: mockProjectLockGuardService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
@@ -269,6 +274,160 @@ describe('TasksService', () => {
           'PROJECT_MANAGER',
         ]),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateTask', () => {
+    const existingTask = {
+      id: 'task-1',
+      projectId: 'proj-1',
+      externalTaskId: 'TASK-1',
+      difficulty: 'MEDIUM',
+      dueDate: null,
+      assigneeId: null,
+      pullRequests: [],
+    };
+
+    beforeEach(() => {
+      mockPrismaService.task.findUnique.mockResolvedValue(existingTask);
+      mockProjectAccessService.assertCanManageProject.mockResolvedValue(undefined);
+      mockProjectLockGuardService.assertProjectMutable.mockResolvedValue(undefined);
+      mockPrismaService.task.update.mockResolvedValue({
+        ...existingTask,
+        difficulty: 'HIGH',
+      });
+      mockPrismaService.auditLog.create.mockResolvedValue({});
+    });
+
+    it('updates difficulty and triggers a recalc', async () => {
+      const result = await service.updateTask(
+        'task-1',
+        { difficulty: 'HIGH' },
+        'manager',
+        ['PROJECT_MANAGER'],
+      );
+
+      expect(mockPrismaService.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'task-1' },
+          data: { difficulty: 'HIGH' },
+        }),
+      );
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'TASK_REASSIGN',
+            metadata: expect.objectContaining({
+              type: 'TASK_FIELDS_UPDATED',
+              changes: expect.objectContaining({
+                difficulty: { from: 'MEDIUM', to: 'HIGH' },
+              }),
+            }),
+          }),
+        }),
+      );
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'contribution.created',
+        { projectId: 'proj-1' },
+      );
+      expect(result.difficulty).toBe('HIGH');
+    });
+
+    it('updates due date when provided', async () => {
+      mockPrismaService.task.update.mockResolvedValueOnce({
+        ...existingTask,
+        dueDate: new Date('2026-06-01T00:00:00Z'),
+      });
+      await service.updateTask(
+        'task-1',
+        { dueDate: new Date('2026-06-01T00:00:00Z') },
+        'manager',
+        ['PROJECT_MANAGER'],
+      );
+      expect(mockPrismaService.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            dueDate: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('clears due date when null is passed', async () => {
+      mockPrismaService.task.findUnique.mockResolvedValueOnce({
+        ...existingTask,
+        dueDate: new Date('2026-06-01T00:00:00Z'),
+      });
+
+      await service.updateTask(
+        'task-1',
+        { dueDate: null },
+        'manager',
+        ['PROJECT_MANAGER'],
+      );
+
+      expect(mockPrismaService.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { dueDate: null } }),
+      );
+    });
+
+    it('is a no-op when no fields change', async () => {
+      await service.updateTask(
+        'task-1',
+        { difficulty: 'MEDIUM' }, // same as existing
+        'manager',
+        ['PROJECT_MANAGER'],
+      );
+
+      expect(mockPrismaService.task.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.auditLog.create).not.toHaveBeenCalled();
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when task does not exist', async () => {
+      mockPrismaService.task.findUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        service.updateTask(
+          'missing',
+          { difficulty: 'HIGH' },
+          'manager',
+          ['PROJECT_MANAGER'],
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects when project is locked', async () => {
+      mockProjectLockGuardService.assertProjectMutable.mockRejectedValueOnce(
+        new Error('Project is locked'),
+      );
+
+      await expect(
+        service.updateTask(
+          'task-1',
+          { difficulty: 'HIGH' },
+          'manager',
+          ['PROJECT_MANAGER'],
+        ),
+      ).rejects.toThrow('Project is locked');
+      expect(mockPrismaService.task.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects when actor cannot manage the project', async () => {
+      mockProjectAccessService.assertCanManageProject.mockRejectedValueOnce(
+        new Error('No access'),
+      );
+
+      await expect(
+        service.updateTask(
+          'task-1',
+          { difficulty: 'HIGH' },
+          'outsider',
+          ['PROJECT_MEMBER'],
+        ),
+      ).rejects.toThrow('No access');
+      expect(mockPrismaService.task.update).not.toHaveBeenCalled();
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
     });
   });
 });
