@@ -92,10 +92,21 @@ export class ProjectsController {
   /**
    * Server-Sent Events stream for live project updates.
    *
-   * The browser EventSource API cannot set custom headers, so the JWT is
-   * passed via the `access_token` query parameter — the JwtStrategy accepts
-   * either source. Subscribers are filtered to a single project channel by
-   * the path param; cross-project leakage is impossible.
+   * Auth caveat: the browser EventSource API cannot set custom headers, so
+   * the JWT is passed via the `access_token` query parameter — accepted by
+   * the JwtStrategy as a fallback. This widens token exposure (web-server
+   * access logs, browser history, referer headers on any redirect), so the
+   * token's short TTL (15 min) and same-origin scope are doing real work
+   * here. If we ever want to narrow that surface, the next step is a
+   * short-lived single-use ticket: client POSTs to a `/events/ticket`
+   * endpoint, gets back a 60-second one-shot token, then opens the SSE
+   * stream with that ticket. See follow-up TODO in project-events.service.
+   *
+   * Subscribers are filtered to a single project channel by the path
+   * param. A periodic recheck terminates the stream if the actor loses
+   * access to the project (e.g. their role is revoked) so the leak
+   * window after revocation is bounded to RECHECK_MS instead of the JWT
+   * TTL.
    */
   @Sse(':id/events')
   @Roles(Role.PROJECT_MEMBER)
@@ -109,7 +120,13 @@ export class ProjectsController {
       req.user.roles,
       id,
     );
-    return this.projectEventsService.stream(id);
+    return this.projectEventsService.stream(id, {
+      recheck: () =>
+        this.projectAccessService
+          .assertCanViewProject(req.user.id, req.user.roles, id)
+          .then(() => true)
+          .catch(() => false),
+    });
   }
 
   @Get(':id/members')

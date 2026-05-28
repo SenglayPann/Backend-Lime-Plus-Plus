@@ -91,4 +91,76 @@ describe('ProjectEventsService', () => {
       'pr_review',
     ]);
   });
+
+  describe('access recheck', () => {
+    it('terminates the stream when recheck returns false', async () => {
+      // Tight interval so the test finishes quickly.
+      const recheck = jest
+        .fn<Promise<boolean>, []>()
+        .mockResolvedValue(false);
+      const collected = firstValueFrom(
+        service
+          .stream('proj-revoke', {
+            recheck,
+            recheckIntervalMs: 10,
+          })
+          .pipe(toArray()),
+      );
+
+      // No publish — stream should still close from the recheck signal.
+      const events = await collected;
+      expect(events.filter((e) => e.type === 'project.updated')).toHaveLength(
+        0,
+      );
+      expect(recheck).toHaveBeenCalled();
+    });
+
+    it('keeps the stream open while recheck returns true and closes on revoke', async () => {
+      let allow = true;
+      const recheck = jest
+        .fn<Promise<boolean>, []>()
+        .mockImplementation(() => Promise.resolve(allow));
+
+      const collected = firstValueFrom(
+        service
+          .stream('proj-flip', {
+            recheck,
+            recheckIntervalMs: 10,
+          })
+          .pipe(toArray()),
+      );
+
+      // Publish one event while access is allowed
+      setTimeout(() => service.publish(makePayload('proj-flip', 'task')), 5);
+      // Revoke after 30ms
+      setTimeout(() => {
+        allow = false;
+      }, 30);
+
+      const events = await collected;
+      const content = events.filter((e) => e.type === 'project.updated');
+      expect(content).toHaveLength(1);
+      expect((content[0].data as ProjectUpdatePayload).kind).toBe('task');
+    });
+
+    it('treats recheck rejection as access revoked', async () => {
+      const recheck = jest
+        .fn<Promise<boolean>, []>()
+        .mockRejectedValue(new Error('db down'));
+
+      const collected = firstValueFrom(
+        service
+          .stream('proj-throw', {
+            recheck,
+            recheckIntervalMs: 10,
+          })
+          .pipe(toArray()),
+      );
+
+      const events = await collected;
+      expect(events.filter((e) => e.type === 'project.updated')).toHaveLength(
+        0,
+      );
+    });
+  });
 });
