@@ -99,6 +99,14 @@ export class RoleDelegationService {
 
     await this.assertCanRemoveUserRole(actorId, actorRoles, role);
 
+    // Orphan-prevention invariants. Applied AFTER the authorization check
+    // and BEFORE the delete, regardless of actor (including ADMIN). The
+    // intent is to keep the system, an organization, or a department from
+    // becoming un-manageable through normal API operations. If a genuine
+    // emergency truly requires removing the last admin/manager, do it via
+    // a DB migration with an audit trail.
+    await this.assertRemovalPreservesInvariants(role);
+
     const removed = await this.prisma.userRole.delete({
       where: { id: roleId },
     });
@@ -396,6 +404,76 @@ export class RoleDelegationService {
     if (!orgRole) {
       throw new ForbiddenException(
         'You do not manage the selected organization',
+      );
+    }
+  }
+
+  private async assertRemovalPreservesInvariants(role: {
+    id: string;
+    role: PrismaRole;
+    organizationId: string | null;
+    departmentId: string | null;
+  }) {
+    if (role.role === PrismaRole.ADMIN) {
+      await this.assertSystemKeepsAnotherAdmin(role.id);
+      return;
+    }
+    if (role.role === PrismaRole.ORGANIZATION_MANAGER && role.organizationId) {
+      await this.assertOrgKeepsAnotherManager(role.organizationId, role.id);
+      return;
+    }
+    if (role.role === PrismaRole.DEPARTMENT_MANAGER && role.departmentId) {
+      await this.assertDeptKeepsAnotherManager(role.departmentId, role.id);
+      return;
+    }
+  }
+
+  private async assertSystemKeepsAnotherAdmin(excludedRoleId: string) {
+    const remaining = await this.prisma.userRole.count({
+      where: {
+        role: PrismaRole.ADMIN,
+        id: { not: excludedRoleId },
+      },
+    });
+    if (remaining === 0) {
+      throw new ConflictException(
+        'System must keep at least one administrator',
+      );
+    }
+  }
+
+  private async assertOrgKeepsAnotherManager(
+    organizationId: string,
+    excludedRoleId: string,
+  ) {
+    const remaining = await this.prisma.userRole.count({
+      where: {
+        organizationId,
+        role: PrismaRole.ORGANIZATION_MANAGER,
+        id: { not: excludedRoleId },
+      },
+    });
+    if (remaining === 0) {
+      throw new ConflictException(
+        'Organization must keep at least one organization manager',
+      );
+    }
+  }
+
+  private async assertDeptKeepsAnotherManager(
+    departmentId: string,
+    excludedRoleId: string,
+  ) {
+    const remaining = await this.prisma.userRole.count({
+      where: {
+        departmentId,
+        role: PrismaRole.DEPARTMENT_MANAGER,
+        id: { not: excludedRoleId },
+      },
+    });
+    if (remaining === 0) {
+      throw new ConflictException(
+        'Department must keep at least one department manager',
       );
     }
   }
