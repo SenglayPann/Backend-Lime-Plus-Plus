@@ -882,12 +882,23 @@ export class ReportsService {
   ): number {
     if (!externalTaskId) return 0;
 
+    // Legacy fallback: old score rows persisted task scores under a
+    // PR_MERGED breakdown key. New rows use TASK_COMPLETED. Reading both
+    // keeps historical reports rendering. See scoring.service.ts for the
+    // backwards-compat note on ScoreBreakdown.
+    type TaskEntry = { task: string; score: number };
+    const legacyEntries =
+      (breakdown as Record<string, unknown>).PR_MERGED as
+        | TaskEntry[]
+        | undefined;
+
     return (
       (breakdown.TASK_COMPLETED || []).find(
         (entry) => entry.task === externalTaskId,
       )?.score ||
-      (breakdown.PR_MERGED || []).find((entry) => entry.task === externalTaskId)
-        ?.score ||
+      (legacyEntries || []).find(
+        (entry: TaskEntry) => entry.task === externalTaskId,
+      )?.score ||
       0
     );
   }

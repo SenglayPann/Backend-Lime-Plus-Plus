@@ -8,7 +8,6 @@ import type { Role } from '../common/decorators/roles.decorator';
 
 export interface ScoringConfig {
   weights: {
-    PR_MERGED: number;
     TASK_COMPLETED: number;
     PR_REVIEW_APPROVED: number;
   };
@@ -24,10 +23,14 @@ export interface ScoringConfig {
 }
 
 export interface ScoreBreakdown {
-  PR_MERGED: Array<{ task: string; score: number; metadata: any }>;
   TASK_COMPLETED: Array<{ task: string; score: number; metadata: any }>;
   REVIEWS: Array<{ pr: string; score: number }>;
   OVERRIDES: Array<{ reason: string; score: number }>;
+  /**
+   * Index signature for backward compatibility. Old grade rows persisted
+   * with a `PR_MERGED` array; readers (e.g. reports) may still inspect it
+   * via this escape hatch, but no code path writes to it any longer.
+   */
   [key: string]: any;
 }
 
@@ -39,9 +42,6 @@ export interface ScoreData {
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   weights: {
-    // PR_MERGED is retained for backward compatibility with old events.
-    // A merged PR is evidence; the task completion is the scoring unit.
-    PR_MERGED: 0,
     TASK_COMPLETED: 10,
     PR_REVIEW_APPROVED: 3,
   },
@@ -116,7 +116,6 @@ export class ScoringService {
         score = {
           totalScore: 0,
           breakdown: {
-            PR_MERGED: [],
             TASK_COMPLETED: [],
             REVIEWS: [],
             OVERRIDES: [],
@@ -148,9 +147,10 @@ export class ScoringService {
       let finalScore = 0;
       const userScore = getUserScore(event.userId);
 
-      if (event.type === 'PR_MERGED') {
-        continue;
-      }
+      // Note: legacy `PR_MERGED` events naturally score zero here because
+      // their weight is no longer in the config (config.weights[type] is
+      // undefined → base = 0 → continue at the guard above). No explicit
+      // skip needed.
 
       if (event.type === 'TASK_COMPLETED') {
         if (scoredTaskIds.has(event.referenceId)) continue;
@@ -292,7 +292,6 @@ export class ScoringService {
       weights: {
         ...DEFAULT_SCORING_CONFIG.weights,
         ...(raw.weights ?? {}),
-        PR_MERGED: 0,
       },
       multipliers: {
         difficulty: {
