@@ -75,8 +75,8 @@ enum AuditAction {
 // Models
 model Organization {
   id               String                       @id @default(uuid())
-  /// Normalized uniqueness is enforced by the
-  /// 20260517105000_add_module_duplicate_guards migration.
+  /// Normalized uniqueness is enforced by a PostgreSQL expression index
+  /// (LOWER(BTRIM(name))) declared in the init migration.
   name             String
   licensePlan      String                       @map("license_plan")
   createdAt        DateTime                     @default(now()) @map("created_at")
@@ -90,8 +90,8 @@ model Organization {
 model Department {
   id             String       @id @default(uuid())
   organizationId String       @map("organization_id")
-  /// Normalized per-organization uniqueness is enforced by the
-  /// 20260517105000_add_module_duplicate_guards migration.
+  /// Normalized per-organization uniqueness is enforced by a PostgreSQL
+  /// expression index (organization_id, LOWER(BTRIM(name))) in the init migration.
   name           String
   description    String?      @db.Text
   createdAt      DateTime     @default(now()) @map("created_at")
@@ -142,10 +142,10 @@ model UserRole {
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   department     Department?   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
-  /// Scoped role uniqueness is enforced by PostgreSQL partial indexes in
-  /// 20260514034500_add_scoped_user_role_unique_indexes. Do not replace those
-  /// with one nullable composite @@unique; PostgreSQL treats NULL values as
-  /// distinct and would allow duplicate global/scoped roles.
+  /// Scoped role uniqueness is enforced by three PostgreSQL partial indexes
+  /// declared in the init migration. Do not replace those with one nullable
+  /// composite @@unique; PostgreSQL treats NULL values as distinct and would
+  /// allow duplicate global/scoped roles.
   @@map("user_roles")
 }
 
