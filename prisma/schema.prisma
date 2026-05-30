@@ -200,6 +200,11 @@ model Task {
   projectId      String         @map("project_id")
   externalTaskId String         @map("external_task_id")
   title          String
+  /// Long-form task body. Synced from the linked GitHub Issue's body on
+  /// project-item add and on issues.edited. Lime++ never edits this — the
+  /// source of truth is GitHub. Surfaced verbatim in task list/detail
+  /// responses for the UI to render.
+  description    String?
   assigneeId     String?        @map("assignee_id")
   status         TaskStatus     @default(TODO)
   difficulty     TaskDifficulty @default(MEDIUM)

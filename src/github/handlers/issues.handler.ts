@@ -79,9 +79,16 @@ export class IssuesHandler {
     let mutated = false;
 
     switch (action) {
-      case 'edited':
-        mutated = await this.syncTitle(task.id, task.title, issue);
+      case 'edited': {
+        const titleChanged = await this.syncTitle(task.id, task.title, issue);
+        const descChanged = await this.syncDescription(
+          task.id,
+          task.description,
+          issue,
+        );
+        mutated = titleChanged || descChanged;
         break;
+      }
       case 'closed':
         mutated = await this.applyStatus(task.id, task.status, 'DONE');
         break;
@@ -123,6 +130,25 @@ export class IssuesHandler {
     await this.prisma.task.update({
       where: { id: taskId },
       data: { title: issue.title },
+    });
+    return true;
+  }
+
+  /**
+   * Mirror the GitHub Issue body onto Task.description. Treats null/undefined
+   * issue body as an empty description so deleting the issue body clears the
+   * Lime++ field as well.
+   */
+  private async syncDescription(
+    taskId: string,
+    currentDescription: string | null,
+    issue: GitHubIssuePayload,
+  ): Promise<boolean> {
+    const next = issue.body ?? null;
+    if (next === currentDescription) return false;
+    await this.prisma.task.update({
+      where: { id: taskId },
+      data: { description: next },
     });
     return true;
   }

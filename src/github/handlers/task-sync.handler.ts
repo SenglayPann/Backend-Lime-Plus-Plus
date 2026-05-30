@@ -164,6 +164,7 @@ export class TaskSyncHandler {
         projectId: project.id,
         externalTaskId,
         title: item.content?.title ?? `Task ${externalTaskId}`,
+        description: item.content?.body ?? null,
         assigneeId: assignee?.id ?? null,
         status: 'TODO',
         difficulty: 'MEDIUM',

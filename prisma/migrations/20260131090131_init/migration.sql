@@ -113,6 +113,7 @@ CREATE TABLE "tasks" (
     "project_id" TEXT NOT NULL,
     "external_task_id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
+    "description" TEXT,
     "assignee_id" TEXT,
     "status" "TaskStatus" NOT NULL DEFAULT 'TODO',
     "difficulty" "TaskDifficulty" NOT NULL DEFAULT 'MEDIUM',

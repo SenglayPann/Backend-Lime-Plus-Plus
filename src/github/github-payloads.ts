@@ -79,6 +79,7 @@ export interface GitHubProjectV2ItemPayload {
   creator: GitHubUserPayload;
   content?: {
     title?: string;
+    body?: string | null;
     number?: number;
     assignees?: {
       nodes: GitHubUserPayload[];
