@@ -280,6 +280,23 @@ export class ProjectsService {
     return target === field;
   }
 
+  /**
+   * Public wrapper around the internal repository + Project V2 validation,
+   * used by the "Test connection" button on the new-project form. Returns the
+   * resolved GitHub repository id on success and throws a BadRequestException
+   * with a human-readable message on failure.
+   */
+  async validateGithubCredentials(
+    dto: { repository: string; github_project_id: string; github_token?: string },
+    actorId: string,
+  ) {
+    return this.validateGitHubResources(
+      { repository: dto.repository, github_project_id: dto.github_project_id },
+      actorId,
+      dto.github_token,
+    );
+  }
+
   private async validateGitHubResources(
     dto: { repository: string; github_project_id: string },
     actorId: string,

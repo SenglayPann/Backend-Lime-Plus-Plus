@@ -221,4 +221,17 @@ export class ProjectsController {
       req.user.roles,
     );
   }
+
+  @Post('validate-github')
+  @Roles(Role.DEPARTMENT_MANAGER, Role.PROJECT_MANAGER, Role.PROJECT_LEAD)
+  @ApiOperation({
+    summary:
+      'Validate GitHub repository + Project V2 + token without creating a project',
+  })
+  async validateGithub(
+    @Body() dto: AttachGitHubDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.projectsService.validateGithubCredentials(dto, req.user.id);
+  }
 }
