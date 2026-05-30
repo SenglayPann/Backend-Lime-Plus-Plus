@@ -200,7 +200,6 @@ model Task {
   projectId      String         @map("project_id")
   externalTaskId String         @map("external_task_id")
   title          String
-  description    String?
   assigneeId     String?        @map("assignee_id")
   status         TaskStatus     @default(TODO)
   difficulty     TaskDifficulty @default(MEDIUM)
