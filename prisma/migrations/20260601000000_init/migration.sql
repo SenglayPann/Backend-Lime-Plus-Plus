@@ -1,3 +1,6 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateEnum
 CREATE TYPE "Role" AS ENUM ('ADMIN', 'ORGANIZATION_MANAGER', 'DEPARTMENT_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEAD', 'PROJECT_MEMBER', 'ORGANIZATION_MEMBER');
 
@@ -11,7 +14,7 @@ CREATE TYPE "Platform" AS ENUM ('GITHUB', 'GITLAB', 'BITBUCKET');
 CREATE TYPE "ProjectStatus" AS ENUM ('ACTIVE', 'LOCKED', 'ARCHIVED');
 
 -- CreateEnum
-CREATE TYPE "TaskStatus" AS ENUM ('TODO', 'IN_PROGRESS', 'DONE', 'BLOCKED');
+CREATE TYPE "TaskStatus" AS ENUM ('TODO', 'IN_PROGRESS', 'DONE', 'BLOCKED', 'ARCHIVED');
 
 -- CreateEnum
 CREATE TYPE "TaskDifficulty" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
@@ -205,6 +208,21 @@ CREATE TABLE "audit_logs" (
 );
 
 -- CreateTable
+CREATE TABLE "generated_reports" (
+    "id" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "project_id" TEXT NOT NULL,
+    "subject_user_id" TEXT,
+    "generated_by_user_id" TEXT NOT NULL,
+    "generated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "data_hash" TEXT NOT NULL,
+    "signature" TEXT NOT NULL,
+    "summary" JSONB NOT NULL DEFAULT '{}',
+
+    CONSTRAINT "generated_reports_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "webhook_deliveries" (
     "id" TEXT NOT NULL,
     "platform" "Platform" NOT NULL,
@@ -270,32 +288,7 @@ CREATE UNIQUE INDEX "users_github_user_id_key" ON "users"("github_user_id");
 CREATE UNIQUE INDEX "users_github_username_key" ON "users"("github_username");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "user_roles_admin_unique"
-    ON "user_roles"("user_id", "role")
-    WHERE "role" = 'ADMIN' AND "organization_id" IS NULL AND "department_id" IS NULL;
-
--- CreateIndex
-CREATE UNIQUE INDEX "user_roles_organization_scope_unique"
-    ON "user_roles"("user_id", "role", "organization_id")
-    WHERE "organization_id" IS NOT NULL AND "department_id" IS NULL;
-
--- CreateIndex
-CREATE UNIQUE INDEX "user_roles_department_scope_unique"
-    ON "user_roles"("user_id", "role", "department_id")
-    WHERE "department_id" IS NOT NULL AND "organization_id" IS NULL;
-
--- CreateIndex
-CREATE UNIQUE INDEX "organizations_name_unique_normalized"
-    ON "organizations"(LOWER(BTRIM("name")));
-
--- CreateIndex
-CREATE UNIQUE INDEX "departments_organization_name_unique_normalized"
-    ON "departments"("organization_id", LOWER(BTRIM("name")));
-
--- CreateIndex
-CREATE UNIQUE INDEX "projects_github_repository_id_key"
-    ON "projects"("github_repository_id")
-    WHERE "github_repository_id" IS NOT NULL;
+CREATE UNIQUE INDEX "projects_github_repository_id_key" ON "projects"("github_repository_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "project_members_project_id_user_id_key" ON "project_members"("project_id", "user_id");
@@ -307,15 +300,16 @@ CREATE UNIQUE INDEX "tasks_project_id_external_task_id_key" ON "tasks"("project_
 CREATE UNIQUE INDEX "pull_requests_project_id_external_pr_id_key" ON "pull_requests"("project_id", "external_pr_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "pr_reviews_pull_request_id_external_review_id_key"
-    ON "pr_reviews"("pull_request_id", "external_review_id");
+CREATE UNIQUE INDEX "pr_reviews_pull_request_id_external_review_id_key" ON "pr_reviews"("pull_request_id", "external_review_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "contribution_events_project_id_user_id_type_reference_id_key"
-    ON "contribution_events"("project_id", "user_id", "type", "reference_id");
+CREATE UNIQUE INDEX "contribution_events_project_id_user_id_type_reference_id_key" ON "contribution_events"("project_id", "user_id", "type", "reference_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "contribution_scores_project_id_user_id_key" ON "contribution_scores"("project_id", "user_id");
+
+-- CreateIndex
+CREATE INDEX "generated_reports_project_id_generated_at_idx" ON "generated_reports"("project_id", "generated_at");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "webhook_deliveries_delivery_id_key" ON "webhook_deliveries"("delivery_id");
@@ -342,8 +336,7 @@ CREATE INDEX "refresh_tokens_expires_at_idx" ON "refresh_tokens"("expires_at");
 CREATE INDEX "refresh_tokens_browser_id_idx" ON "refresh_tokens"("browser_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "organization_allowlist_entries_organization_id_type_value_key"
-    ON "organization_allowlist_entries"("organization_id", "type", "value");
+CREATE UNIQUE INDEX "organization_allowlist_entries_organization_id_type_value_key" ON "organization_allowlist_entries"("organization_id", "type", "value");
 
 -- AddForeignKey
 ALTER TABLE "departments" ADD CONSTRAINT "departments_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -421,6 +414,15 @@ ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_id_fkey" FOREIGN KEY (
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "generated_reports" ADD CONSTRAINT "generated_reports_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "generated_reports" ADD CONSTRAINT "generated_reports_subject_user_id_fkey" FOREIGN KEY ("subject_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "generated_reports" ADD CONSTRAINT "generated_reports_generated_by_user_id_fkey" FOREIGN KEY ("generated_by_user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "auth_handoff_codes" ADD CONSTRAINT "auth_handoff_codes_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -434,3 +436,32 @@ ALTER TABLE "organization_allowlist_entries" ADD CONSTRAINT "organization_allowl
 
 -- AddForeignKey
 ALTER TABLE "organization_allowlist_entries" ADD CONSTRAINT "organization_allowlist_entries_claimed_by_user_id_fkey" FOREIGN KEY ("claimed_by_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+
+-- ── Custom partial / function-based indexes ──────────────────────────
+-- These can't be expressed in schema.prisma directly, so Prisma's diff
+-- tool doesn't regenerate them. They were originally added in the first
+-- init migration and must travel with the consolidated init.
+
+-- Allow at most one global ADMIN row per user.
+CREATE UNIQUE INDEX "user_roles_admin_unique"
+    ON "user_roles"("user_id", "role")
+    WHERE "role" = 'ADMIN' AND "organization_id" IS NULL AND "department_id" IS NULL;
+
+-- One (user, role) per organization, when scoped to an org only.
+CREATE UNIQUE INDEX "user_roles_organization_scope_unique"
+    ON "user_roles"("user_id", "role", "organization_id")
+    WHERE "organization_id" IS NOT NULL AND "department_id" IS NULL;
+
+-- One (user, role) per department, when scoped to a department only.
+CREATE UNIQUE INDEX "user_roles_department_scope_unique"
+    ON "user_roles"("user_id", "role", "department_id")
+    WHERE "department_id" IS NOT NULL AND "organization_id" IS NULL;
+
+-- Case-insensitive uniqueness on organization names.
+CREATE UNIQUE INDEX "organizations_name_unique_normalized"
+    ON "organizations"(LOWER(BTRIM("name")));
+
+-- Case-insensitive uniqueness on department names within an organization.
+CREATE UNIQUE INDEX "departments_organization_name_unique_normalized"
+    ON "departments"("organization_id", LOWER(BTRIM("name")));

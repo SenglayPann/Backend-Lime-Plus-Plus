@@ -1,0 +1,79 @@
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_id_fkey" FOREIGN KEY ("actor_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "auth_handoff_codes" ADD CONSTRAINT "auth_handoff_codes_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "contribution_events" ADD CONSTRAINT "contribution_events_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "contribution_events" ADD CONSTRAINT "contribution_events_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "contribution_scores" ADD CONSTRAINT "contribution_scores_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "contribution_scores" ADD CONSTRAINT "contribution_scores_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "departments" ADD CONSTRAINT "departments_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "organization_allowlist_entries" ADD CONSTRAINT "organization_allowlist_entries_added_by_id_fkey" FOREIGN KEY ("added_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "organization_allowlist_entries" ADD CONSTRAINT "organization_allowlist_entries_claimed_by_user_id_fkey" FOREIGN KEY ("claimed_by_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "organization_allowlist_entries" ADD CONSTRAINT "organization_allowlist_entries_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pr_reviews" ADD CONSTRAINT "pr_reviews_pull_request_id_fkey" FOREIGN KEY ("pull_request_id") REFERENCES "pull_requests"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pr_reviews" ADD CONSTRAINT "pr_reviews_reviewer_id_fkey" FOREIGN KEY ("reviewer_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "project_members" ADD CONSTRAINT "project_members_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "project_members" ADD CONSTRAINT "project_members_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "projects" ADD CONSTRAINT "projects_attached_by_user_id_fkey" FOREIGN KEY ("attached_by_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "projects" ADD CONSTRAINT "projects_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "projects" ADD CONSTRAINT "projects_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "departments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pull_requests" ADD CONSTRAINT "pull_requests_author_id_fkey" FOREIGN KEY ("author_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "pull_requests" ADD CONSTRAINT "pull_requests_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "pull_requests" ADD CONSTRAINT "pull_requests_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "score_overrides" ADD CONSTRAINT "score_overrides_overridden_by_fkey" FOREIGN KEY ("overridden_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "score_overrides" ADD CONSTRAINT "score_overrides_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "score_overrides" ADD CONSTRAINT "score_overrides_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_assignee_id_fkey" FOREIGN KEY ("assignee_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "departments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_roles" ADD CONSTRAINT "user_roles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+CREATE INDEX "auth_handoff_codes_expires_at_idx" ON "auth_handoff_codes"("expires_at");
+CREATE INDEX "auth_handoff_codes_user_id_idx" ON "auth_handoff_codes"("user_id");
+CREATE INDEX "refresh_tokens_browser_id_idx" ON "refresh_tokens"("browser_id");
+CREATE INDEX "refresh_tokens_expires_at_idx" ON "refresh_tokens"("expires_at");
+CREATE INDEX "refresh_tokens_user_id_idx" ON "refresh_tokens"("user_id");
+CREATE TABLE "audit_logs" (
+CREATE TABLE "auth_handoff_codes" (
+CREATE TABLE "contribution_events" (
+CREATE TABLE "contribution_scores" (
+CREATE TABLE "departments" (
+CREATE TABLE "organization_allowlist_entries" (
+CREATE TABLE "organizations" (
+CREATE TABLE "pr_reviews" (
+CREATE TABLE "project_members" (
+CREATE TABLE "projects" (
+CREATE TABLE "pull_requests" (
+CREATE TABLE "refresh_tokens" (
+CREATE TABLE "score_overrides" (
+CREATE TABLE "tasks" (
+CREATE TABLE "user_roles" (
+CREATE TABLE "users" (
+CREATE TABLE "webhook_deliveries" (
+CREATE TYPE "AllowlistEntryType" AS ENUM ('EMAIL', 'DOMAIN', 'GITHUB_USERNAME');
+CREATE TYPE "AuditAction" AS ENUM ('SCORE_OVERRIDE', 'TASK_REASSIGN', 'PROJECT_LOCK', 'ROLE_CHANGE', 'WEBHOOK_IGNORED');
+CREATE TYPE "Platform" AS ENUM ('GITHUB', 'GITLAB', 'BITBUCKET');
+CREATE TYPE "PrStatus" AS ENUM ('OPEN', 'MERGED', 'CLOSED');
+CREATE TYPE "ProjectStatus" AS ENUM ('ACTIVE', 'LOCKED', 'ARCHIVED');
+CREATE TYPE "ReviewState" AS ENUM ('APPROVED', 'COMMENTED', 'CHANGES_REQUESTED');
+CREATE TYPE "Role" AS ENUM ('ADMIN', 'ORGANIZATION_MANAGER', 'DEPARTMENT_MANAGER', 'PROJECT_MANAGER', 'PROJECT_LEAD', 'PROJECT_MEMBER', 'ORGANIZATION_MEMBER');
+CREATE TYPE "TaskDifficulty" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
+CREATE TYPE "TaskStatus" AS ENUM ('TODO', 'IN_PROGRESS', 'DONE', 'BLOCKED');
+CREATE UNIQUE INDEX "auth_handoff_codes_code_hash_key" ON "auth_handoff_codes"("code_hash");
+CREATE UNIQUE INDEX "contribution_events_project_id_user_id_type_reference_id_key"
+CREATE UNIQUE INDEX "contribution_scores_project_id_user_id_key" ON "contribution_scores"("project_id", "user_id");
+CREATE UNIQUE INDEX "departments_organization_name_unique_normalized"
+CREATE UNIQUE INDEX "organization_allowlist_entries_organization_id_type_value_key"
+CREATE UNIQUE INDEX "organizations_name_unique_normalized"
+CREATE UNIQUE INDEX "pr_reviews_pull_request_id_external_review_id_key"
+CREATE UNIQUE INDEX "project_members_project_id_user_id_key" ON "project_members"("project_id", "user_id");
+CREATE UNIQUE INDEX "projects_github_repository_id_key"
+CREATE UNIQUE INDEX "pull_requests_project_id_external_pr_id_key" ON "pull_requests"("project_id", "external_pr_id");
+CREATE UNIQUE INDEX "refresh_tokens_token_hash_key" ON "refresh_tokens"("token_hash");
+CREATE UNIQUE INDEX "tasks_project_id_external_task_id_key" ON "tasks"("project_id", "external_task_id");
+CREATE UNIQUE INDEX "user_roles_admin_unique"
+CREATE UNIQUE INDEX "user_roles_department_scope_unique"
+CREATE UNIQUE INDEX "user_roles_organization_scope_unique"
+CREATE UNIQUE INDEX "users_github_user_id_key" ON "users"("github_user_id");
+CREATE UNIQUE INDEX "users_github_username_key" ON "users"("github_username");
+CREATE UNIQUE INDEX "webhook_deliveries_delivery_id_key" ON "webhook_deliveries"("delivery_id");
