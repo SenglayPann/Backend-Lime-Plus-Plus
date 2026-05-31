@@ -11,6 +11,7 @@ import {
   GitHubPullRequestPayload,
   GitHubInstallationPayload,
   GitHubRepositoryPayload,
+  GitHubUserPayload,
 } from '../github-payloads';
 import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
 import { findOrCreateGitHubUser } from '../github-user-resolution';
@@ -108,7 +109,7 @@ export class PrLifecycleHandler {
         );
         break;
       case 'closed':
-        await this.handleClosed(project, pull_request);
+        await this.handleClosed(project, pull_request, payload.sender);
         break;
       default:
         this.logger.debug(`Ignoring PR action: ${action}`);
@@ -269,6 +270,7 @@ export class PrLifecycleHandler {
   private async handleClosed(
     project: Project,
     pr: GitHubPullRequestPayload,
+    sender: GitHubUserPayload,
   ): Promise<void> {
     const isMerged = pr.merged === true;
 
@@ -321,8 +323,15 @@ export class PrLifecycleHandler {
       this.emitProjectUpdated(project.id);
 
       if (isMerged && task && task.assigneeId === author.id) {
-        const mergedAt = pr.merged_at ? new Date(pr.merged_at) : new Date();
-        await this.emitTaskCompletionEvent(project, task, author.id, mergedAt);
+        const mergerOk = await this.assertMergerAuthorized(
+          project.id,
+          sender,
+          pr.number,
+        );
+        if (mergerOk) {
+          const mergedAt = pr.merged_at ? new Date(pr.merged_at) : new Date();
+          await this.emitTaskCompletionEvent(project, task, author.id, mergedAt);
+        }
       } else if (isMerged && task) {
         this.logger.warn(
           `PR #${pr.number} merged by non-assignee - no contribution event emitted`,
@@ -336,6 +345,7 @@ export class PrLifecycleHandler {
         project,
         existingPr as PullRequest & { task: Task | null },
         pr,
+        sender,
       );
     } else {
       // Closed without merge
@@ -359,6 +369,7 @@ export class PrLifecycleHandler {
     project: Project,
     existingPr: PullRequest & { task: Task | null },
     prPayload: GitHubPullRequestPayload,
+    sender: GitHubUserPayload,
   ): Promise<void> {
     // Update PR status to MERGED
     await this.prisma.pullRequest.update({
@@ -385,6 +396,18 @@ export class PrLifecycleHandler {
       );
       return;
     }
+
+    // Lime++-side merge approval gate: only fire the scoring event when the
+    // person who actually clicked Merge has authority over the project. On a
+    // free-tier private repo GitHub branch protection isn't available, so
+    // without this check a contributor could self-merge their own PR and
+    // claim the credit.
+    const mergerOk = await this.assertMergerAuthorized(
+      project.id,
+      sender,
+      prPayload.number,
+    );
+    if (!mergerOk) return;
 
     // Check if task already has a merged PR (multiple PRs per task support)
     const existingMergedPr = await this.prisma.pullRequest.findFirst({
@@ -413,6 +436,56 @@ export class PrLifecycleHandler {
       existingPr.authorId,
       mergedAt,
     );
+  }
+
+  /**
+   * Returns true when the PR merger has authority over this project:
+   * project-level PROJECT_MANAGER/PROJECT_LEAD, or global ADMIN. A
+   * contributor self-merging their own PR fails this check, the
+   * contribution event is skipped, and an audit row records the attempt.
+   */
+  private async assertMergerAuthorized(
+    projectId: string,
+    sender: GitHubUserPayload,
+    prNumber: number,
+  ): Promise<boolean> {
+    const merger = await this.findOrCreateUser(
+      String(sender.id),
+      sender.login,
+      sender.avatar_url,
+    );
+
+    const [projectRole, globalAdmin] = await Promise.all([
+      this.prisma.projectMember.findFirst({
+        where: {
+          projectId,
+          userId: merger.id,
+          role: { in: ['PROJECT_MANAGER', 'PROJECT_LEAD'] },
+        },
+      }),
+      this.prisma.userRole.findFirst({
+        where: { userId: merger.id, role: 'ADMIN' },
+      }),
+    ]);
+
+    if (projectRole || globalAdmin) return true;
+
+    this.logger.warn(
+      `PR #${prNumber} merged by ${sender.login} who is not a PM/Lead/Admin — no contribution event emitted`,
+    );
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'TASK_REASSIGN',
+        actorId: merger.id,
+        projectId,
+        metadata: {
+          type: 'PR_MERGED_BY_UNAUTHORIZED_USER',
+          prNumber,
+          merger: sender.login,
+        },
+      },
+    });
+    return false;
   }
 
   /**

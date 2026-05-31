@@ -35,6 +35,8 @@ describe('PrLifecycleHandler', () => {
     },
     auditLog: { create: jest.fn() },
     contributionEvent: { create: jest.fn(), upsert: jest.fn() },
+    projectMember: { findFirst: jest.fn() },
+    userRole: { findFirst: jest.fn() },
   };
 
   const mockEventEmitter = {
@@ -70,6 +72,12 @@ describe('PrLifecycleHandler', () => {
     mockProjectLockGuard.isLocked.mockImplementation(
       (project: { status: string }) => project.status === 'LOCKED',
     );
+    // Default: merger is treated as a PM so existing merge-credit tests
+    // (which don't set up a sender) still grant the contribution event.
+    mockPrismaService.projectMember.findFirst.mockResolvedValue({
+      id: 'pm-membership',
+    });
+    mockPrismaService.userRole.findFirst.mockResolvedValue(null);
   });
 
   it('should parse task ID correctly', () => {
@@ -268,6 +276,7 @@ describe('PrLifecycleHandler', () => {
         private: false,
         html_url: 'repo-url',
       },
+      sender: { id: 999, login: 'merger', avatar_url: 'url' },
     } as unknown as GitHubPullRequestEventPayload;
 
     it('should emit one TASK_COMPLETED event for a valid merged PR', async () => {
