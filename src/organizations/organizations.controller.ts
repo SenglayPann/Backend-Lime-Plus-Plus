@@ -203,12 +203,11 @@ export class OrganizationsController {
     @Param('entryId') entryId: string,
     @Request() req: RequestWithUser,
   ) {
-    await this.contributorVerification.rejectContributor(
+    return this.contributorVerification.rejectContributor(
       id,
       entryId,
       req.user.id,
       req.user.roles,
     );
-    return { success: true };
   }
 }

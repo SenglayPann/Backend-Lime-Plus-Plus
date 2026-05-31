@@ -1,7 +1,8 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { AllowlistEntryType, AuditAction, Prisma } from '../generated/prisma';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { AllowlistEntryType, AuditAction, Prisma, Role as PrismaRole } from '../generated/prisma';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrganizationAccessService } from '../common/access/organization-access.service';
+import { RoleDelegationService } from '../common/access/role-delegation.service';
 import type { Role } from '../common/decorators/roles.decorator';
 
 export type AllowlistStatusValue = 'PENDING' | 'APPROVED' | 'REJECTED' | 'UNKNOWN';
@@ -13,6 +14,7 @@ export class ContributorVerificationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly organizationAccess: OrganizationAccessService,
+    private readonly roleDelegation: RoleDelegationService,
   ) {}
 
   /**
@@ -138,15 +140,21 @@ export class ContributorVerificationService {
   }
 
   /**
-   * Mark a contributor's pending entry as REJECTED. Throws if no entry
-   * exists for this org.
+   * Reject an allowlist entry. Coupling rule: rejection cascades —
+   * every UserRole (ORGANIZATION_MEMBER, DEPARTMENT_MANAGER,
+   * PROJECT_MANAGER supervisor, etc.) scoped to this org and every
+   * ProjectMember row on the org's projects get removed for the matched
+   * user. Global ADMIN roles are untouched (they aren't org-scoped).
+   *
+   * If stripping would leave the org without a manager, the call fails
+   * with 409 (matches the existing removal invariant).
    */
   async rejectContributor(
     organizationId: string,
     entryId: string,
     actorId: string,
     actorRoles: Role[],
-  ): Promise<void> {
+  ): Promise<{ rolesStripped: number; projectsStripped: number }> {
     await this.organizationAccess.assertCanManageOrganization(
       actorId,
       actorRoles,
@@ -160,12 +168,30 @@ export class ContributorVerificationService {
       throw new NotFoundException('Allowlist entry not found');
     }
     if (entry.status === 'APPROVED') {
-      // Don't silently demote an approved entry through the reject path.
-      // Approve→reject must go through a separate remove flow.
+      // Approved entries must be explicitly removed via the delete flow
+      // (which already supports revokeMembership=true) — silently
+      // demoting them through reject would hide the destructive intent.
       throw new ForbiddenException(
         'Cannot reject an already-approved entry. Remove it instead.',
       );
     }
+
+    // Look up the user — present only for GITHUB_USERNAME entries that
+    // have actually signed in. EMAIL/DOMAIN entries never map to a user.
+    const user =
+      entry.type === AllowlistEntryType.GITHUB_USERNAME
+        ? await this.prisma.user.findFirst({
+            where: {
+              githubUsername: { equals: entry.value, mode: 'insensitive' },
+            },
+            select: { id: true, githubUsername: true },
+          })
+        : null;
+
+    const strip = user
+      ? await this.cascadeStripUserFromOrg(user.id, organizationId)
+      : { rolesStripped: 0, projectsStripped: 0 };
+
     await this.prisma.$transaction([
       this.prisma.organizationAllowlistEntry.update({
         where: { id: entryId },
@@ -180,6 +206,129 @@ export class ContributorVerificationService {
             entryId,
             organizationId,
             value: entry.value,
+            cascadedRoles: strip.rolesStripped,
+            cascadedProjects: strip.projectsStripped,
+          },
+        },
+      }),
+    ]);
+
+    return strip;
+  }
+
+  /**
+   * Remove every org-scoped role + project membership the user has on
+   * this org. Used by rejection and by the "remove ORG_MEMBER" auto-
+   * reject path. Preserves the "org must keep at least one manager"
+   * invariant — if stripping would leave the org with no
+   * ORGANIZATION_MANAGER, throws 409.
+   */
+  async cascadeStripUserFromOrg(
+    userId: string,
+    organizationId: string,
+  ): Promise<{ rolesStripped: number; projectsStripped: number }> {
+    const userRoles = await this.prisma.userRole.findMany({
+      where: {
+        userId,
+        OR: [
+          { organizationId },
+          { department: { organizationId } },
+        ],
+      },
+      select: { id: true, role: true, organizationId: true },
+    });
+
+    // Invariant: never strip the last ORGANIZATION_MANAGER.
+    const orgManagerBeingStripped = userRoles.find(
+      (r) => r.role === PrismaRole.ORGANIZATION_MANAGER && r.organizationId,
+    );
+    if (orgManagerBeingStripped) {
+      const remainingManagers = await this.prisma.userRole.count({
+        where: {
+          organizationId,
+          role: PrismaRole.ORGANIZATION_MANAGER,
+          userId: { not: userId },
+        },
+      });
+      if (remainingManagers === 0) {
+        throw new ConflictException(
+          'Cannot strip the last organization manager. Promote someone else first.',
+        );
+      }
+    }
+
+    const projectMembers = await this.prisma.projectMember.findMany({
+      where: {
+        userId,
+        project: { department: { organizationId } },
+      },
+      select: { id: true, projectId: true, role: true },
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.userRole.deleteMany({
+        where: { id: { in: userRoles.map((r) => r.id) } },
+      }),
+      this.prisma.projectMember.deleteMany({
+        where: { id: { in: projectMembers.map((m) => m.id) } },
+      }),
+    ]);
+
+    this.logger.log(
+      `Cascade-stripped user ${userId} from org ${organizationId}: ${userRoles.length} role(s), ${projectMembers.length} project membership(s)`,
+    );
+
+    return {
+      rolesStripped: userRoles.length,
+      projectsStripped: projectMembers.length,
+    };
+  }
+
+  /**
+   * Flip the GITHUB_USERNAME allowlist entry for this user to REJECTED.
+   * Called from the role-delegation flow when ORG_MEMBER is removed,
+   * to keep the two states coupled. Idempotent; no-op when no entry
+   * exists or it's already REJECTED.
+   */
+  async rejectByUser(
+    userId: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { githubUsername: true },
+    });
+    if (!user?.githubUsername) return;
+
+    const entry = await this.prisma.organizationAllowlistEntry.findFirst({
+      where: {
+        organizationId,
+        type: AllowlistEntryType.GITHUB_USERNAME,
+        value: { equals: user.githubUsername, mode: 'insensitive' },
+      },
+      select: { id: true, status: true },
+    });
+    if (!entry || entry.status === 'REJECTED') return;
+
+    await this.prisma.$transaction([
+      this.prisma.organizationAllowlistEntry.update({
+        where: { id: entry.id },
+        data: {
+          status: 'REJECTED',
+          claimedByUserId: null,
+          claimedAt: null,
+        },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          action: AuditAction.ROLE_CHANGE,
+          actorId,
+          metadata: {
+            operation: 'allowlist_reject_via_membership_removal',
+            entryId: entry.id,
+            organizationId,
+            githubUsername: user.githubUsername,
           },
         },
       }),
@@ -240,6 +389,14 @@ export class ContributorVerificationService {
 
     let retroCredits = 0;
     if (user) {
+      // Coupling: an APPROVED contributor must also be an ORGANIZATION_MEMBER
+      // of this org. Idempotent — no-op if the role already exists.
+      await this.roleDelegation.ensureOrganizationMembership(
+        user.id,
+        organizationId,
+        actorId,
+      );
+
       retroCredits = await this.retroCreditContributor({
         organizationId,
         githubUserId: user.githubUserId,

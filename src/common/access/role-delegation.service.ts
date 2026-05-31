@@ -260,7 +260,65 @@ export class RoleDelegationService {
       },
     });
 
+    // Coupling: removing ORG_MEMBER signals "I don't want this person
+    // in my org." Flip their matching GITHUB_USERNAME allowlist entry
+    // to REJECTED so future PRs are also held back. Inlined to avoid
+    // a circular module dep with OrganizationsModule.
+    if (
+      role.role === PrismaRole.ORGANIZATION_MEMBER &&
+      role.organizationId
+    ) {
+      await this.rejectContributorAllowlistEntry(
+        role.userId,
+        role.organizationId,
+        actorId,
+      );
+    }
+
     return removed;
+  }
+
+  private async rejectContributorAllowlistEntry(
+    userId: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { githubUsername: true },
+    });
+    if (!user?.githubUsername) return;
+
+    const entry = await this.prisma.organizationAllowlistEntry.findFirst({
+      where: {
+        organizationId,
+        type: 'GITHUB_USERNAME',
+        value: { equals: user.githubUsername, mode: 'insensitive' },
+      },
+      select: { id: true, status: true },
+    });
+    if (!entry || entry.status === 'REJECTED') return;
+
+    await this.prisma.organizationAllowlistEntry.update({
+      where: { id: entry.id },
+      data: {
+        status: 'REJECTED',
+        claimedByUserId: null,
+        claimedAt: null,
+      },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        action: AuditAction.ROLE_CHANGE,
+        actorId,
+        metadata: {
+          operation: 'allowlist_reject_via_membership_removal',
+          entryId: entry.id,
+          organizationId,
+          githubUsername: user.githubUsername,
+        },
+      },
+    });
   }
 
   private async assertCanAssignUserRole(
