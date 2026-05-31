@@ -5,6 +5,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Project, Task, PullRequest } from '../../generated/prisma';
 import { safeUserSelect } from '../../common/serialization/safe-user-select';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import { ContributorVerificationService } from '../../organizations/contributor-verification.service';
 import { repositoryProjectWhere } from '../repository-normalization';
 import {
   GitHubPullRequestEventPayload,
@@ -42,6 +43,7 @@ export class PrLifecycleHandler {
     private githubService: GitHubService,
     private eventEmitter: EventEmitter2,
     private projectLockGuard: ProjectLockGuardService,
+    private contributorVerification: ContributorVerificationService,
   ) {}
 
   private emitProjectUpdated(projectId: string) {
@@ -135,6 +137,12 @@ export class PrLifecycleHandler {
       pr.user.login,
       pr.user.avatar_url,
     );
+
+    // First time we see this contributor on the org? Drop a PENDING entry
+    // into the org's allowlist so an org manager can decide whether their
+    // future merged PRs should count for scoring. No-op if the entry
+    // already exists at any status (APPROVED stays approved, etc.).
+    await this.flagContributorForApproval(project.id, pr.user.login);
 
     // Validate task linkage
     let task: (Task & { assignee: SafeUser | null }) | null = null;
@@ -328,7 +336,14 @@ export class PrLifecycleHandler {
           sender,
           pr.number,
         );
-        if (mergerOk) {
+        const contributorOk =
+          mergerOk &&
+          (await this.assertContributorApproved(
+            project.id,
+            pr.user.login,
+            pr.number,
+          ));
+        if (mergerOk && contributorOk) {
           const mergedAt = pr.merged_at ? new Date(pr.merged_at) : new Date();
           await this.emitTaskCompletionEvent(project, task, author.id, mergedAt);
         }
@@ -409,6 +424,18 @@ export class PrLifecycleHandler {
     );
     if (!mergerOk) return;
 
+    // Allowlist gate: the PR author must be APPROVED on the project's org
+    // before any credit accrues. Unknown / pending / rejected contributors
+    // have their score held back until an org manager approves them; once
+    // approved, ContributorVerificationService.retroCreditContributor
+    // backfills the events.
+    const contributorOk = await this.assertContributorApproved(
+      project.id,
+      prPayload.user.login,
+      prPayload.number,
+    );
+    if (!contributorOk) return;
+
     // Check if task already has a merged PR (multiple PRs per task support)
     const existingMergedPr = await this.prisma.pullRequest.findFirst({
       where: {
@@ -436,6 +463,89 @@ export class PrLifecycleHandler {
       existingPr.authorId,
       mergedAt,
     );
+  }
+
+  /**
+   * Resolve the GitHub Project's organization id, then ensure a PENDING
+   * allowlist entry exists for this GitHub user if Lime++ has never
+   * seen them on the org. No-op when the entry already exists at any
+   * status. Failures are swallowed and logged so a downstream verification
+   * service hiccup never blocks the PR webhook from persisting.
+   */
+  private async flagContributorForApproval(
+    projectId: string,
+    githubUsername: string,
+  ): Promise<void> {
+    if (!githubUsername) return;
+    try {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { department: { select: { organizationId: true } } },
+      });
+      const organizationId = project?.department.organizationId;
+      if (!organizationId) return;
+
+      // Use the org's first manager as the "added by" attribution so the
+      // audit/UI shows a real person, not a system bot. Fall back to the
+      // global admin if no org manager exists yet.
+      const attribution = await this.prisma.userRole.findFirst({
+        where: { organizationId, role: 'ORGANIZATION_MANAGER' },
+        select: { userId: true },
+      });
+      const fallbackAdmin = !attribution
+        ? await this.prisma.userRole.findFirst({
+            where: { role: 'ADMIN' },
+            select: { userId: true },
+          })
+        : null;
+      const addedByUserId =
+        attribution?.userId ?? fallbackAdmin?.userId ?? null;
+      if (!addedByUserId) return;
+
+      await this.contributorVerification.ensurePendingEntry({
+        organizationId,
+        githubUsername,
+        addedByUserId,
+        note: `seen contributing on project ${projectId}`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `flagContributorForApproval failed for ${githubUsername} on project ${projectId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Returns true when the PR author's GitHub username is APPROVED on the
+   * project's organization allowlist. PENDING / REJECTED / UNKNOWN
+   * contributors have their TASK_COMPLETED credit held back; the
+   * approval flow later calls retroCreditContributor to backfill.
+   */
+  private async assertContributorApproved(
+    projectId: string,
+    githubUsername: string,
+    prNumber: number,
+  ): Promise<boolean> {
+    if (!githubUsername) return false;
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { department: { select: { organizationId: true } } },
+    });
+    const organizationId = project?.department.organizationId;
+    if (!organizationId) return true;
+
+    const status = await this.contributorVerification.getContributorStatus(
+      githubUsername,
+      organizationId,
+    );
+    if (status === 'APPROVED') return true;
+
+    this.logger.warn(
+      `PR #${prNumber} merged by ${githubUsername} whose allowlist status is ${status} — credit held back until approval`,
+    );
+    return false;
   }
 
   /**

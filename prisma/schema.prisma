@@ -27,6 +27,16 @@ enum AllowlistEntryType {
   GITHUB_USERNAME
 }
 
+/// Lifecycle of an allowlist entry. APPROVED entries grant scoring and
+/// auto-enrollment. PENDING entries do neither — they sit in the org
+/// manager's approval queue. REJECTED entries are explicitly denied so
+/// the same contributor doesn't reappear silently in the queue.
+enum AllowlistStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum Platform {
   GITHUB
   GITLAB
@@ -128,6 +138,7 @@ model User {
   createdProjects           Project[]                    @relation("ProjectCreator")
   refreshTokens             RefreshToken[]
   addedAllowlistEntries     OrganizationAllowlistEntry[] @relation("AllowlistAdder")
+  approvedAllowlistEntries  OrganizationAllowlistEntry[] @relation("AllowlistApprover")
   claimedAllowlistEntries   OrganizationAllowlistEntry[] @relation("AllowlistClaimer")
   reportsAboutMe            GeneratedReport[]            @relation("ReportSubject")
   reportsIGenerated         GeneratedReport[]            @relation("ReportGenerator")
@@ -390,19 +401,35 @@ model RefreshToken {
 }
 
 model OrganizationAllowlistEntry {
-  id              String             @id @default(uuid())
-  organizationId  String             @map("organization_id")
-  type            AllowlistEntryType
-  value           String
-  addedById       String             @map("added_by_id")
-  claimedByUserId String?            @map("claimed_by_user_id")
-  claimedAt       DateTime?          @map("claimed_at")
-  createdAt       DateTime           @default(now()) @map("created_at")
+  id               String             @id @default(uuid())
+  organizationId   String             @map("organization_id")
+  type             AllowlistEntryType
+  value            String
+  /// Manual-add by an org manager records that manager's id; auto-created
+  /// entries (when a previously unknown contributor opens a PR) carry the
+  /// id of the org manager who is the addressee of the approval queue,
+  /// or the system bot, so the column is never null.
+  addedById        String             @map("added_by_id")
+  /// Approval lifecycle: manual entries default to APPROVED (the manager
+  /// adding them is the implicit approver), auto-created entries land as
+  /// PENDING and surface in the approval queue.
+  status           AllowlistStatus    @default(APPROVED)
+  /// Distinguishes entries that Lime++ auto-created from a contributor
+  /// signal (PR opened, task assigned) vs entries an org manager typed
+  /// in. Used to label the UI and to drive retro-scoring on approval.
+  autoCreated      Boolean            @default(false) @map("auto_created")
+  approvedByUserId String?            @map("approved_by_user_id")
+  approvedAt       DateTime?          @map("approved_at")
+  claimedByUserId  String?            @map("claimed_by_user_id")
+  claimedAt        DateTime?          @map("claimed_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
 
-  organization    Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  addedBy         User               @relation("AllowlistAdder", fields: [addedById], references: [id])
-  claimedByUser   User?              @relation("AllowlistClaimer", fields: [claimedByUserId], references: [id])
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  addedBy          User               @relation("AllowlistAdder", fields: [addedById], references: [id])
+  approvedBy       User?              @relation("AllowlistApprover", fields: [approvedByUserId], references: [id])
+  claimedByUser    User?              @relation("AllowlistClaimer", fields: [claimedByUserId], references: [id])
 
   @@unique([organizationId, type, value])
+  @@index([organizationId, status])
   @@map("organization_allowlist_entries")
 }

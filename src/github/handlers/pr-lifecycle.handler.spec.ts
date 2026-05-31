@@ -18,12 +18,13 @@ import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GitHubPullRequestEventPayload } from '../github-payloads';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import { ContributorVerificationService } from '../../organizations/contributor-verification.service';
 
 describe('PrLifecycleHandler', () => {
   let handler: PrLifecycleHandler;
 
   const mockPrismaService = {
-    project: { findFirst: jest.fn() },
+    project: { findFirst: jest.fn(), findUnique: jest.fn() },
     task: { findUnique: jest.fn(), update: jest.fn() },
     user: { findUnique: jest.fn(), create: jest.fn() },
     pullRequest: {
@@ -50,6 +51,10 @@ describe('PrLifecycleHandler', () => {
   const mockProjectLockGuard = {
     isLocked: jest.fn(),
   };
+  const mockContributorVerification = {
+    ensurePendingEntry: jest.fn().mockResolvedValue('APPROVED'),
+    getContributorStatus: jest.fn().mockResolvedValue('APPROVED'),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -59,6 +64,10 @@ describe('PrLifecycleHandler', () => {
         { provide: GitHubService, useValue: mockGitHubService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: ProjectLockGuardService, useValue: mockProjectLockGuard },
+        {
+          provide: ContributorVerificationService,
+          useValue: mockContributorVerification,
+        },
       ],
     }).compile();
 

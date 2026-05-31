@@ -78,7 +78,60 @@ export class RoleDelegationService {
       },
     });
 
+    // Manual assignment by an org manager / admin == implicit approval
+    // on the contributor allowlist. This is the "PM assigning someone is
+    // a trust signal" rule. Idempotent upsert: existing PENDING/REJECTED
+    // entries get flipped to APPROVED, brand-new entries land as
+    // APPROVED with autoCreated=false (manual provenance).
+    await this.approveContributorAllowlistEntry(userId, organizationId, actorId);
+
     return true;
+  }
+
+  /**
+   * Inlined here to avoid a circular dep with OrganizationsModule.
+   * ContributorVerificationService offers the same operation as a
+   * first-class method; this private copy exists purely so the role
+   * delegation flow can mark the user as APPROVED without importing
+   * the verification service.
+   */
+  private async approveContributorAllowlistEntry(
+    userId: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { githubUsername: true },
+    });
+    if (!user?.githubUsername) return;
+
+    await this.prisma.organizationAllowlistEntry.upsert({
+      where: {
+        organizationId_type_value: {
+          organizationId,
+          type: 'GITHUB_USERNAME',
+          value: user.githubUsername,
+        },
+      },
+      update: {
+        status: 'APPROVED',
+        approvedByUserId: actorId,
+        approvedAt: new Date(),
+      },
+      create: {
+        organizationId,
+        type: 'GITHUB_USERNAME',
+        value: user.githubUsername,
+        addedById: actorId,
+        status: 'APPROVED',
+        autoCreated: false,
+        approvedByUserId: actorId,
+        approvedAt: new Date(),
+        claimedByUserId: userId,
+        claimedAt: new Date(),
+      },
+    });
   }
 
   /**

@@ -18,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { OrganizationsService } from './organizations.service';
 import { EnrollmentService } from './enrollment.service';
+import { ContributorVerificationService } from './contributor-verification.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { AddAllowlistEntriesDto } from './dto/add-allowlist-entries.dto';
@@ -35,6 +36,7 @@ export class OrganizationsController {
   constructor(
     private readonly organizationsService: OrganizationsService,
     private readonly enrollmentService: EnrollmentService,
+    private readonly contributorVerification: ContributorVerificationService,
   ) {}
 
   @Post()
@@ -170,5 +172,43 @@ export class OrganizationsController {
       req.user.roles,
       revokeMembership === 'true',
     );
+  }
+
+  @Post(':id/allowlist/:entryId/approve')
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({
+    summary:
+      'Approve a pending contributor; retroactively credits their merged PRs',
+  })
+  async approveAllowlistEntry(
+    @Param('id') id: string,
+    @Param('entryId') entryId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.contributorVerification.approveAndRetroCredit(
+      id,
+      entryId,
+      req.user.id,
+      req.user.roles,
+    );
+  }
+
+  @Post(':id/allowlist/:entryId/reject')
+  @Roles(Role.ORGANIZATION_MANAGER)
+  @ApiOperation({
+    summary: 'Reject a pending contributor; future PRs stay uncredited',
+  })
+  async rejectAllowlistEntry(
+    @Param('id') id: string,
+    @Param('entryId') entryId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    await this.contributorVerification.rejectContributor(
+      id,
+      entryId,
+      req.user.id,
+      req.user.roles,
+    );
+    return { success: true };
   }
 }

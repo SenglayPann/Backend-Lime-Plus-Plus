@@ -17,6 +17,8 @@ describe('RoleDelegationService', () => {
     },
     projectMember: { findMany: jest.fn() },
     department: { findFirst: jest.fn(), findUnique: jest.fn() },
+    user: { findUnique: jest.fn() },
+    organizationAllowlistEntry: { upsert: jest.fn() },
     auditLog: { create: jest.fn() },
   };
   const service = new RoleDelegationService(prisma as any);
