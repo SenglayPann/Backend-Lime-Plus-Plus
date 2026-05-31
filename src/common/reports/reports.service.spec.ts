@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, PayloadTooLargeException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ReportsService } from './reports.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
@@ -25,6 +26,18 @@ describe('ReportsService', () => {
     task: { findMany: jest.fn(), count: jest.fn() },
     scoreOverride: { findMany: jest.fn(), count: jest.fn() },
     auditLog: { count: jest.fn() },
+    generatedReport: {
+      create: jest.fn().mockResolvedValue({
+        id: 'report-id',
+        generatedAt: new Date('2026-06-01T00:00:00Z'),
+      }),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+    },
+  };
+
+  const mockConfigService = {
+    get: jest.fn().mockReturnValue('http://localhost:3000'),
   };
 
   const mockPdfService = {
@@ -55,6 +68,7 @@ describe('ReportsService', () => {
           useValue: mockOrganizationAccessService,
         },
         { provide: DepartmentAccessService, useValue: mockDepartmentAccessService },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 

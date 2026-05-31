@@ -3,6 +3,8 @@ import {
   NotFoundException,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createHash, createHmac } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PdfService } from './pdf.service';
 import { Parser } from 'json2csv';
@@ -45,7 +47,91 @@ export class ReportsService {
     private projectAccessService: ProjectAccessService,
     private organizationAccessService: OrganizationAccessService,
     private departmentAccessService: DepartmentAccessService,
+    private configService: ConfigService,
   ) {}
+
+  /**
+   * Look up a generated report by its public verification ID. Returns
+   * `null` if it doesn't exist. Used by the public verify endpoint —
+   * does not enforce auth on its own (the controller does that).
+   */
+  async findVerification(id: string) {
+    const row = await this.prisma.generatedReport.findUnique({
+      where: { id },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            repository: true,
+            department: {
+              select: { name: true, organization: { select: { name: true } } },
+            },
+          },
+        },
+        subjectUser: { select: safeUserSelect },
+        generatedBy: { select: safeUserSelect },
+      },
+    });
+    return row;
+  }
+
+  /**
+   * Persist a verification row for a generated report and return the
+   * verification block to stamp on the PDF. The hash covers a canonical
+   * JSON serialization of the report payload, so a recipient can confirm
+   * the printed numbers match the snapshot Lime++ stored. The signature
+   * binds the row id to the hash with a server-side secret so even
+   * direct-db tampering is detectable.
+   */
+  private async createReportVerification(args: {
+    type: 'individual' | 'project';
+    projectId: string;
+    subjectUserId: string | null;
+    generatedByUserId: string;
+    data: unknown;
+    summary: Record<string, unknown>;
+  }) {
+    const canonical = canonicalize(args.data);
+    const dataHash = createHash('sha256').update(canonical).digest('hex');
+
+    const row = await this.prisma.generatedReport.create({
+      data: {
+        type: args.type,
+        projectId: args.projectId,
+        subjectUserId: args.subjectUserId,
+        generatedByUserId: args.generatedByUserId,
+        dataHash,
+        signature: '',
+        summary: args.summary as Prisma.InputJsonValue,
+      },
+    });
+
+    const secret =
+      this.configService.get<string>('REPORT_VERIFICATION_SECRET') ||
+      this.configService.get<string>('JWT_SECRET') ||
+      'dev-fallback-secret';
+    const signature = createHmac('sha256', secret)
+      .update(`${row.id}:${dataHash}`)
+      .digest('hex');
+
+    await this.prisma.generatedReport.update({
+      where: { id: row.id },
+      data: { signature },
+    });
+
+    const baseUrl =
+      this.configService.get<string>('PUBLIC_VERIFY_BASE_URL') ||
+      this.configService.get<string>('PUBLIC_FRONTEND_URL') ||
+      'http://localhost:3000';
+
+    return {
+      id: row.id,
+      hash: dataHash,
+      verifyUrl: `${baseUrl.replace(/\/$/, '')}/verify/${row.id}`,
+      generatedAt: row.generatedAt,
+    };
+  }
 
   async exportIndividualPdf(
     projectId: string,
@@ -174,7 +260,20 @@ export class ReportsService {
       warnings,
     };
 
-    return this.pdfService.generateIndividualReport(reportData);
+    const verification = await this.createReportVerification({
+      type: 'individual',
+      projectId,
+      subjectUserId: userId,
+      generatedByUserId: actorId,
+      data: reportData,
+      summary: {
+        student: reportData.student.name,
+        totalScore: reportData.score.totalScore,
+        mergedPrs: reportData.contributionEvidence.length,
+      },
+    });
+
+    return this.pdfService.generateIndividualReport({ ...reportData, verification });
   }
 
   async exportProjectPdf(
@@ -324,7 +423,21 @@ export class ReportsService {
       })),
     };
 
-    return this.pdfService.generateProjectReport(reportData);
+    const verification = await this.createReportVerification({
+      type: 'project',
+      projectId,
+      subjectUserId: null,
+      generatedByUserId: actorId,
+      data: reportData,
+      summary: {
+        project: reportData.project.name,
+        totalMembers: reportData.summary.totalMembers,
+        doneTasks: reportData.summary.doneTasks,
+        mergedPrs: reportData.summary.mergedPrs,
+      },
+    });
+
+    return this.pdfService.generateProjectReport({ ...reportData, verification });
   }
 
   async exportProjectCsv(
@@ -1103,3 +1216,28 @@ type ExportSizeProject = {
   scoreOverrides?: unknown[];
   auditLogs?: unknown[];
 };
+
+/**
+ * Deterministic JSON serialization for hashing. Standard JSON.stringify
+ * preserves insertion order for object keys, which means the same logical
+ * data can hash to different strings across runs. This sorts keys
+ * recursively and turns Date values into ISO strings so the verification
+ * hash is reproducible.
+ */
+function canonicalize(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return '[' + value.map(canonicalize).join(',') + ']';
+  }
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return (
+    '{' +
+    keys
+      .map((k) => JSON.stringify(k) + ':' + canonicalize(obj[k]))
+      .join(',') +
+    '}'
+  );
+}

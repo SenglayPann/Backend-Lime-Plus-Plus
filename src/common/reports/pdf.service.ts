@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 type PdfDate = Date | string | null | undefined;
+
+export interface ReportVerification {
+  id: string;
+  hash: string;
+  verifyUrl: string;
+  generatedAt: Date;
+}
 
 export interface IndividualReportData {
   student: {
@@ -47,6 +55,7 @@ export interface IndividualReportData {
     createdAt: PdfDate;
   }>;
   warnings: string[];
+  verification?: ReportVerification;
 }
 
 export interface ProjectReportData {
@@ -106,6 +115,7 @@ export interface ProjectReportData {
     createdAt: PdfDate;
     metadata: string;
   }>;
+  verification?: ReportVerification;
 }
 
 // Design tokens — keep them in one place so the look stays consistent.
@@ -139,7 +149,11 @@ interface Column {
 @Injectable()
 export class PdfService {
   async generateIndividualReport(data: IndividualReportData): Promise<Buffer> {
-    return this.createDocument((doc) => {
+    const qrPng = data.verification
+      ? await this.renderQr(data.verification.verifyUrl)
+      : null;
+
+    return this.createDocument(data.verification, qrPng, (doc) => {
       this.drawHeader(doc, 'Individual Contribution Report');
 
       // Hero score card up top — what reviewers look at first.
@@ -234,7 +248,11 @@ export class PdfService {
   }
 
   async generateProjectReport(data: ProjectReportData): Promise<Buffer> {
-    return this.createDocument((doc) => {
+    const qrPng = data.verification
+      ? await this.renderQr(data.verification.verifyUrl)
+      : null;
+
+    return this.createDocument(data.verification, qrPng, (doc) => {
       this.drawHeader(doc, 'Project Evaluation Report');
 
       this.drawProjectCover(doc, data);
@@ -352,7 +370,11 @@ export class PdfService {
 
   // ── document lifecycle ───────────────────────────────────────────
 
-  private createDocument(draw: (doc: PDFKit.PDFDocument) => void) {
+  private createDocument(
+    verification: ReportVerification | undefined,
+    qrPng: Buffer | null,
+    draw: (doc: PDFKit.PDFDocument) => void,
+  ) {
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
         margin: 48,
@@ -372,6 +394,13 @@ export class PdfService {
 
       draw(doc);
 
+      // Verification block at the end of the body, before footers are
+      // back-filled. Drawn last so it always sits on the final page,
+      // visually anchoring the document's authenticity claim.
+      if (verification && qrPng) {
+        this.drawVerificationBlock(doc, verification, qrPng);
+      }
+
       // Page footer with page numbers, drawn after content so we know the count.
       const range = doc.bufferedPageRange();
       for (let i = 0; i < range.count; i += 1) {
@@ -381,6 +410,92 @@ export class PdfService {
 
       doc.end();
     });
+  }
+
+  private async renderQr(text: string): Promise<Buffer> {
+    return QRCode.toBuffer(text, {
+      type: 'png',
+      width: 180,
+      margin: 1,
+      color: { dark: '#0f172a', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    });
+  }
+
+  /**
+   * Authenticity block at the end of every report. Anyone can scan the
+   * QR (or open the printed URL) and the public verify endpoint will
+   * confirm whether this PDF really came from Lime++ with these numbers.
+   */
+  private drawVerificationBlock(
+    doc: PDFKit.PDFDocument,
+    verification: ReportVerification,
+    qrPng: Buffer,
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const usable = right - left;
+    const h = 110;
+
+    this.ensureSpace(doc, h + 30);
+    doc.moveDown(0.8);
+    const y = doc.y;
+
+    doc.roundedRect(left, y, usable, h, 6).fill(COLOR.card);
+    doc
+      .roundedRect(left, y, usable, h, 6)
+      .lineWidth(0.5)
+      .strokeColor(COLOR.divider)
+      .stroke();
+
+    // QR on the right, info on the left.
+    const qrSize = 80;
+    const qrX = right - qrSize - 14;
+    const qrY = y + (h - qrSize) / 2;
+    doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
+
+    const textX = left + 16;
+    const textWidth = qrX - textX - 16;
+
+    doc
+      .fillColor(COLOR.brand)
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .text('AUTHENTICITY', textX, y + 12, {
+        width: textWidth,
+        lineBreak: false,
+      });
+    doc
+      .fillColor(COLOR.ink)
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .text('Verify this report at:', textX, y + 26, {
+        width: textWidth,
+        lineBreak: false,
+      });
+    doc
+      .fillColor(COLOR.body)
+      .font('Helvetica')
+      .fontSize(9)
+      .text(verification.verifyUrl, textX, y + 40, {
+        width: textWidth,
+        link: verification.verifyUrl,
+        underline: true,
+      });
+
+    const idLine = `Report ID: ${verification.id}`;
+    const hashLine = `SHA-256: ${verification.hash}`;
+    const stampLine = `Generated: ${this.formatDateTime(verification.generatedAt)} UTC`;
+
+    doc
+      .fillColor(COLOR.muted)
+      .font('Helvetica')
+      .fontSize(7.5)
+      .text(idLine, textX, y + 64, { width: textWidth, lineBreak: false })
+      .text(hashLine, textX, y + 76, { width: textWidth, lineBreak: false })
+      .text(stampLine, textX, y + 88, { width: textWidth, lineBreak: false });
+
+    doc.y = y + h + 8;
   }
 
   // ── layout primitives ────────────────────────────────────────────

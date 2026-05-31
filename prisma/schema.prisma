@@ -129,6 +129,8 @@ model User {
   refreshTokens             RefreshToken[]
   addedAllowlistEntries     OrganizationAllowlistEntry[] @relation("AllowlistAdder")
   claimedAllowlistEntries   OrganizationAllowlistEntry[] @relation("AllowlistClaimer")
+  reportsAboutMe            GeneratedReport[]            @relation("ReportSubject")
+  reportsIGenerated         GeneratedReport[]            @relation("ReportGenerator")
 
   @@map("users")
 }
@@ -177,6 +179,7 @@ model Project {
   contributionScores ContributionScore[]
   scoreOverrides     ScoreOverride[]
   auditLogs          AuditLog[]
+  generatedReports   GeneratedReport[]
 
   @@map("projects")
 }
@@ -311,6 +314,30 @@ model AuditLog {
   project   Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@map("audit_logs")
+}
+
+/// One row per exported PDF report. The row's id becomes the public
+/// verification token printed on the PDF; the data_hash + signature pair
+/// lets a third party confirm the PDF came from Lime++ by hitting the
+/// public verify endpoint. Rows are append-only — a re-export creates a
+/// new row, never replaces.
+model GeneratedReport {
+  id                String   @id @default(uuid())
+  type              String
+  projectId         String   @map("project_id")
+  subjectUserId     String?  @map("subject_user_id")
+  generatedByUserId String   @map("generated_by_user_id")
+  generatedAt       DateTime @default(now()) @map("generated_at")
+  dataHash          String   @map("data_hash")
+  signature         String
+  summary           Json     @default("{}")
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subjectUser User?   @relation("ReportSubject", fields: [subjectUserId], references: [id], onDelete: SetNull)
+  generatedBy User    @relation("ReportGenerator", fields: [generatedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, generatedAt])
+  @@map("generated_reports")
 }
 
 model WebhookDelivery {
