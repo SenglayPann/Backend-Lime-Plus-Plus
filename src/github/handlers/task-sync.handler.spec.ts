@@ -16,6 +16,7 @@ import { TaskSyncHandler } from './task-sync.handler';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import { PrLifecycleHandler } from './pr-lifecycle.handler';
 
 import { GitHubProjectV2ItemEventPayload } from '../github-payloads';
 
@@ -28,12 +29,16 @@ describe('TaskSyncHandler', () => {
     user: { findUnique: jest.fn(), create: jest.fn() },
     projectMember: { upsert: jest.fn() },
     auditLog: { create: jest.fn() },
+    pullRequest: { findMany: jest.fn(), updateMany: jest.fn() },
   };
   const mockProjectLockGuard = {
     isLocked: jest.fn(),
   };
   const mockEventEmitter = {
     emit: jest.fn(),
+  };
+  const mockPrLifecycleHandler = {
+    parseTaskId: jest.fn().mockReturnValue(null),
   };
 
   beforeEach(async () => {
@@ -43,6 +48,7 @@ describe('TaskSyncHandler', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ProjectLockGuardService, useValue: mockProjectLockGuard },
         { provide: EventEmitter2, useValue: mockEventEmitter },
+        { provide: PrLifecycleHandler, useValue: mockPrLifecycleHandler },
       ],
     }).compile();
 
@@ -54,6 +60,7 @@ describe('TaskSyncHandler', () => {
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
     mockProjectLockGuard.isLocked.mockReturnValue(false);
     mockPrismaService.user.findUnique.mockResolvedValue({ id: 'sender-user' });
+    mockPrismaService.pullRequest.findMany.mockResolvedValue([]);
   });
 
   const basePayload = {
@@ -259,7 +266,7 @@ describe('TaskSyncHandler', () => {
 
     expect(mockPrismaService.task.update).toHaveBeenCalledWith({
       where: { id: 't1' },
-      data: { status: 'BLOCKED' }, // Soft delete
+      data: { status: 'ARCHIVED' }, // Soft delete
     });
     expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -270,7 +277,7 @@ describe('TaskSyncHandler', () => {
             type: 'TASK_SOFT_DELETE',
             taskId: 'TASK-cn1',
             previousStatus: undefined,
-            newStatus: 'BLOCKED',
+            newStatus: 'ARCHIVED',
           }) as unknown,
         }) as unknown,
       }),

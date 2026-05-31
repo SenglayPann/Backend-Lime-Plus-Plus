@@ -17,6 +17,7 @@ import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GitHubPullRequestReviewEventPayload } from '../github-payloads';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
+import { PrLifecycleHandler } from './pr-lifecycle.handler';
 
 describe('PrReviewHandler', () => {
   let handler: PrReviewHandler;
@@ -25,8 +26,12 @@ describe('PrReviewHandler', () => {
     project: { findFirst: jest.fn() },
     pullRequest: { findUnique: jest.fn() },
     user: { findUnique: jest.fn(), create: jest.fn() },
-    prReview: { create: jest.fn(), upsert: jest.fn() },
-    contributionEvent: { create: jest.fn(), upsert: jest.fn() },
+    prReview: { create: jest.fn(), upsert: jest.fn(), findFirst: jest.fn() },
+    contributionEvent: {
+      create: jest.fn(),
+      upsert: jest.fn(),
+      deleteMany: jest.fn(),
+    },
   };
 
   const mockEventEmitter = {
@@ -34,6 +39,9 @@ describe('PrReviewHandler', () => {
   };
   const mockProjectLockGuard = {
     isLocked: jest.fn(),
+  };
+  const mockPrLifecycleHandler = {
+    ensurePullRequestRecord: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -43,6 +51,7 @@ describe('PrReviewHandler', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
         { provide: ProjectLockGuardService, useValue: mockProjectLockGuard },
+        { provide: PrLifecycleHandler, useValue: mockPrLifecycleHandler },
       ],
     }).compile();
 
@@ -53,6 +62,10 @@ describe('PrReviewHandler', () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {});
     mockProjectLockGuard.isLocked.mockReturnValue(false);
+    mockPrismaService.prReview.findFirst.mockResolvedValue(null);
+    mockPrismaService.contributionEvent.deleteMany.mockResolvedValue({
+      count: 0,
+    });
   });
 
   const validPayload: GitHubPullRequestReviewEventPayload = {
@@ -115,7 +128,7 @@ describe('PrReviewHandler', () => {
       expect.objectContaining({
         create: expect.objectContaining({
           type: 'PR_REVIEW_APPROVED',
-          referenceId: 'r1',
+          referenceId: 'pr1',
           score: 3,
         }) as unknown,
       }),

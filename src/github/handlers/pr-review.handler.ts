@@ -7,6 +7,7 @@ import { repositoryProjectWhere } from '../repository-normalization';
 import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
 import { findOrCreateGitHubUser } from '../github-user-resolution';
 import type { ProjectUpdatePayload } from '../project-events.service';
+import { PrLifecycleHandler } from './pr-lifecycle.handler';
 
 /**
  * PR Review Handler (spec §7)
@@ -30,6 +31,7 @@ export class PrReviewHandler {
     private prisma: PrismaService,
     private eventEmitter: EventEmitter2,
     private projectLockGuard: ProjectLockGuardService,
+    private prLifecycleHandler: PrLifecycleHandler,
   ) {}
 
   /**
@@ -89,8 +91,11 @@ export class PrReviewHandler {
       return;
     }
 
-    // Find the PR in our DB
-    const existingPr = await this.prisma.pullRequest.findUnique({
+    // Find the PR in our DB, or bootstrap a record if the review webhook
+    // arrived before the pull_request webhook (out-of-order delivery, common
+    // with smee replays). The review payload carries the full PR object so
+    // we can persist it without any extra GitHub round-trip.
+    let existingPr = await this.prisma.pullRequest.findUnique({
       where: {
         projectId_externalPrId: {
           projectId: project.id,
@@ -101,9 +106,12 @@ export class PrReviewHandler {
 
     if (!existingPr) {
       this.logger.warn(
-        `PR #${pull_request.number} not found in DB — review cannot be linked`,
+        `PR #${pull_request.number} not found in DB — bootstrapping from review payload`,
       );
-      return;
+      existingPr = await this.prLifecycleHandler.ensurePullRequestRecord(
+        project,
+        pull_request,
+      );
     }
 
     // Find or create the reviewer user
@@ -149,7 +157,9 @@ export class PrReviewHandler {
     };
     this.eventEmitter.emit('project.updated', projectUpdate);
 
-    // Emit contribution event only for APPROVED reviews
+    // Contribution events for reviews are keyed on the PR (not the individual
+    // review row), so a reviewer cannot farm points by alternating
+    // request-changes / approve cycles on the same PR.
     if (reviewState === 'APPROVED') {
       await this.prisma.contributionEvent.upsert({
         where: {
@@ -157,14 +167,14 @@ export class PrReviewHandler {
             projectId: project.id,
             userId: reviewer.id,
             type: 'PR_REVIEW_APPROVED',
-            referenceId: savedReview.id,
+            referenceId: existingPr.id,
           },
         },
         create: {
           projectId: project.id,
           userId: reviewer.id,
           type: 'PR_REVIEW_APPROVED',
-          referenceId: savedReview.id,
+          referenceId: existingPr.id,
           score: 3,
         },
         update: { score: 3 },
@@ -174,6 +184,37 @@ export class PrReviewHandler {
         `Contribution event emitted: PR_REVIEW_APPROVED(+3) for ${review.user.login}`,
       );
       this.eventEmitter.emit('contribution.created', { projectId: project.id });
+    } else {
+      // State changed away from APPROVED (e.g. APPROVED → CHANGES_REQUESTED,
+      // or dismissal). If this reviewer has no other APPROVED review on this
+      // PR, drop their approval credit so the leaderboard reflects reality.
+      const stillApproved = await this.prisma.prReview.findFirst({
+        where: {
+          pullRequestId: existingPr.id,
+          reviewerId: reviewer.id,
+          state: 'APPROVED',
+          id: { not: savedReview.id },
+        },
+      });
+
+      if (!stillApproved) {
+        const removed = await this.prisma.contributionEvent.deleteMany({
+          where: {
+            projectId: project.id,
+            userId: reviewer.id,
+            type: 'PR_REVIEW_APPROVED',
+            referenceId: existingPr.id,
+          },
+        });
+        if (removed.count > 0) {
+          this.logger.log(
+            `Removed APPROVED credit for ${review.user.login} on PR #${pull_request.number} (review state is now ${reviewState})`,
+          );
+          this.eventEmitter.emit('contribution.created', {
+            projectId: project.id,
+          });
+        }
+      }
     }
   }
 

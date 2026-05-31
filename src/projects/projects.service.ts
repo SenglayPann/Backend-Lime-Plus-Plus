@@ -563,23 +563,6 @@ export class ProjectsService {
 
     if (!project) throw new NotFoundException('Project not found');
 
-    // Trigger background sync if active, linked, and query-er has manage privileges
-    if (project.status === ProjectStatus.ACTIVE && project.externalProjectId && canManageProject) {
-      this.usersService.getGitHubAccessToken(actorId)
-        .then(async (userToken) => {
-          const syncToken = userToken || 
-            (project.projectGithubToken ? this.decryptToken(project.projectGithubToken) : null) ||
-            this.configService.get<string>('GITHUB_PERSONAL_ACCESS_TOKEN');
-
-          if (syncToken) {
-            await this.syncTasks(project.id, syncToken, actorId, actorRoles);
-          }
-        })
-        .catch((err) => {
-          console.error(`Failed to background sync tasks for project ${id}:`, err);
-        });
-    }
-
     // Safely remove the encrypted projectGithubToken from the public API response
     const safeProject = { ...project };
     delete (safeProject as any).projectGithubToken;

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AuditAction, Project } from '../../generated/prisma';
+import { AuditAction, Project, Task } from '../../generated/prisma';
 import { safeUserSelect } from '../../common/serialization/safe-user-select';
 import { ProjectLockGuardService } from '../../common/access/project-lock-guard.service';
 import type { ProjectUpdatePayload } from '../project-events.service';
@@ -12,6 +12,7 @@ import {
 } from '../github-payloads';
 import { auditIgnoredLockedWebhook } from '../audit-ignored-locked-event';
 import { findOrCreateGitHubUser } from '../github-user-resolution';
+import { PrLifecycleHandler } from './pr-lifecycle.handler';
 
 /**
  * Task Sync Handler (spec §8)
@@ -35,6 +36,7 @@ export class TaskSyncHandler {
     private prisma: PrismaService,
     private projectLockGuard: ProjectLockGuardService,
     private eventEmitter: EventEmitter2,
+    private prLifecycleHandler: PrLifecycleHandler,
   ) {}
 
   private emitProjectUpdated(projectId: string) {
@@ -125,6 +127,16 @@ export class TaskSyncHandler {
     item: GitHubProjectV2ItemPayload,
     sender: GitHubUserPayload,
   ): Promise<void> {
+    // Skip non-issue items. PRs added to the project board are tracked via
+    // pull_request webhooks and the PullRequest table; mirroring them as
+    // tasks would create phantom rows that no PR can ever link to.
+    if (!this.isIssueContent(item)) {
+      this.logger.debug(
+        `Project item content_type=${item.content_type} — skipping (only Issues become tasks)`,
+      );
+      return;
+    }
+
     if (!item.content_node_id && !item.content?.number) {
       this.logger.debug(
         'Project item has no content node — skipping (draft item)',
@@ -159,7 +171,7 @@ export class TaskSyncHandler {
       await this.ensureProjectMembership(project.id, assignee.id);
     }
 
-    await this.prisma.task.create({
+    const createdTask = await this.prisma.task.create({
       data: {
         projectId: project.id,
         externalTaskId,
@@ -174,7 +186,42 @@ export class TaskSyncHandler {
     this.logger.log(
       `Task ${externalTaskId} created for project ${project.id}${assignee ? '' : ' without assignee'}`,
     );
+
+    await this.retroLinkPullRequests(project, createdTask);
     this.emitProjectUpdated(project.id);
+  }
+
+  /**
+   * When a task is created after a PR that already references it, the PR
+   * was persisted with taskId = null. Walk the project's unlinked PRs and
+   * link any whose title parses to this task's externalTaskId.
+   */
+  private async retroLinkPullRequests(
+    project: Project,
+    task: Task,
+  ): Promise<void> {
+    const unlinked = await this.prisma.pullRequest.findMany({
+      where: { projectId: project.id, taskId: null },
+      select: { id: true, title: true },
+    });
+
+    const matchIds: string[] = [];
+    for (const pr of unlinked) {
+      const parsed = this.prLifecycleHandler.parseTaskId(pr.title, null);
+      if (parsed === task.externalTaskId) {
+        matchIds.push(pr.id);
+      }
+    }
+
+    if (matchIds.length === 0) return;
+
+    await this.prisma.pullRequest.updateMany({
+      where: { id: { in: matchIds } },
+      data: { taskId: task.id },
+    });
+    this.logger.log(
+      `Retro-linked ${matchIds.length} PR(s) to ${task.externalTaskId}`,
+    );
   }
 
   /**
@@ -187,6 +234,10 @@ export class TaskSyncHandler {
     },
     sender: GitHubUserPayload,
   ): Promise<void> {
+    if (!this.isIssueContent(item)) {
+      return;
+    }
+
     const externalTaskId = this.generateTaskId(item);
 
     const task = await this.prisma.task.findUnique({
@@ -328,6 +379,10 @@ export class TaskSyncHandler {
     item: GitHubProjectV2ItemPayload,
     sender: GitHubUserPayload,
   ): Promise<void> {
+    if (!this.isIssueContent(item)) {
+      return;
+    }
+
     const externalTaskId = this.generateTaskId(item);
 
     const task = await this.prisma.task.findUnique({
@@ -346,10 +401,11 @@ export class TaskSyncHandler {
       return;
     }
 
-    // Soft-delete: set status to BLOCKED (spec §13: task deleted on GitHub → soft-delete + flag)
+    // Soft-delete: set status to ARCHIVED so users can distinguish
+    // "removed from GitHub Project" from "actually blocked work".
     await this.prisma.task.update({
       where: { id: task.id },
-      data: { status: 'BLOCKED' },
+      data: { status: 'ARCHIVED' },
     });
 
     const actor = await this.findOrCreateUser(
@@ -366,16 +422,32 @@ export class TaskSyncHandler {
           type: 'TASK_SOFT_DELETE',
           taskId: externalTaskId,
           previousStatus: task.status,
-          newStatus: 'BLOCKED',
+          newStatus: 'ARCHIVED',
           source: 'GITHUB_PROJECT_ITEM_DELETED',
         },
       },
     });
 
     this.logger.warn(
-      `Task ${externalTaskId} soft-deleted (set to BLOCKED) — item removed from GitHub Project`,
+      `Task ${externalTaskId} archived — item removed from GitHub Project`,
     );
     this.emitProjectUpdated(project.id);
+  }
+
+  /**
+   * Only Issue (and DraftIssue, treated as a draft task) items become Tasks.
+   * PullRequest items are tracked through the pull_request webhook flow.
+   */
+  private isIssueContent(item: GitHubProjectV2ItemPayload): boolean {
+    const type = item.content_type;
+    if (!type) {
+      // Older webhook payloads may omit content_type. Fall back to checking
+      // for an issue-shaped number; PRs also have numbers, so when in doubt
+      // we accept and let pr-lifecycle.handler still do the right thing for
+      // the PR-side persistence.
+      return Boolean(item.content?.number);
+    }
+    return type === 'Issue' || type === 'DraftIssue';
   }
 
   /**

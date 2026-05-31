@@ -456,6 +456,62 @@ export class PrLifecycleHandler {
   }
 
   /**
+   * Bootstrap a PullRequest row from a webhook PR payload without firing
+   * commit-status checks or contribution events. Used by other handlers
+   * (e.g. pr-review) that need to ensure the PR exists before they can
+   * attach their own data.
+   */
+  async ensurePullRequestRecord(
+    project: Project,
+    pr: GitHubPullRequestPayload,
+  ): Promise<PullRequest> {
+    const taskId = this.parseTaskId(pr.title, pr.body);
+    const author = await this.findOrCreateUser(
+      String(pr.user.id),
+      pr.user.login,
+      pr.user.avatar_url,
+    );
+
+    let task: Task | null = null;
+    if (taskId) {
+      task = await this.prisma.task.findUnique({
+        where: {
+          projectId_externalTaskId: {
+            projectId: project.id,
+            externalTaskId: taskId,
+          },
+        },
+      });
+    }
+
+    const isClosed = pr.state === 'closed';
+    return this.prisma.pullRequest.upsert({
+      where: {
+        projectId_externalPrId: {
+          projectId: project.id,
+          externalPrId: String(pr.number),
+        },
+      },
+      create: {
+        projectId: project.id,
+        platform: 'GITHUB',
+        externalPrId: String(pr.number),
+        taskId: task?.id ?? null,
+        authorId: author.id,
+        title: pr.title,
+        url: pr.html_url,
+        status: isClosed ? (pr.merged ? 'MERGED' : 'CLOSED') : 'OPEN',
+        mergedAt: pr.merged_at ? new Date(pr.merged_at) : null,
+      },
+      update: {
+        title: pr.title,
+        url: pr.html_url,
+        taskId: task?.id ?? undefined,
+      },
+    });
+  }
+
+  /**
    * Parse task ID from PR title or body (spec §6.1, §6.2)
    *
    * Matches format: TASK-<code>

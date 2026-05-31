@@ -68,6 +68,13 @@ export class ProjectMetadataHandler {
       return;
     }
 
+    // Reopened is the inverse of closed → it must be allowed to act on a
+    // LOCKED project, otherwise the lock guard below would trap it forever.
+    if (action === 'reopened') {
+      await this.handleReopened(project, sender);
+      return;
+    }
+
     if (this.projectLockGuard.isLocked(project)) {
       this.logger.warn(
         `Ignoring projects_v2 ${action} for locked project ${project.id}`,
@@ -93,6 +100,55 @@ export class ProjectMetadataHandler {
       default:
         this.logger.debug(`Ignoring projects_v2 action: ${action}`);
     }
+  }
+
+  /**
+   * Handle project reopened on GitHub → restore to ACTIVE if it was locked
+   * by a prior `closed` event. Manually-locked projects (LOCKED without a
+   * GitHub close) are intentionally left alone — only the operator who
+   * locked them should unlock them.
+   */
+  private async handleReopened(
+    project: Project,
+    sender: GitHubUserPayload,
+  ): Promise<void> {
+    if (project.status !== 'LOCKED') {
+      this.logger.debug(
+        `Project ${project.id} reopened on GitHub but local status is ${project.status} — nothing to do`,
+      );
+      return;
+    }
+
+    await this.prisma.project.update({
+      where: { id: project.id },
+      data: {
+        status: 'ACTIVE',
+        lockedAt: null,
+      },
+    });
+
+    if (sender) {
+      const actor = await this.findOrCreateUser(
+        String(sender.id),
+        sender.login,
+        sender.avatar_url,
+      );
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'PROJECT_LOCK',
+          actorId: actor.id,
+          projectId: project.id,
+          metadata: {
+            type: 'PROJECT_REOPENED_ON_GITHUB',
+            previousStatus: 'LOCKED',
+            newStatus: 'ACTIVE',
+          },
+        },
+      });
+    }
+
+    this.logger.log(`Project ${project.id} unlocked — GitHub Project reopened`);
+    this.emitProjectUpdated(project.id);
   }
 
   /**
