@@ -393,6 +393,8 @@ export class ReportsService {
           title: task.title,
           assignee: this.getUserName(task.assignee),
           status: task.status,
+          difficulty: task.difficulty,
+          dueDate: task.dueDate,
           linkedPr: linkedPr?.externalPrId || 'N/A',
           prStatus: linkedPr?.status || 'N/A',
           mergedAt: linkedPr?.mergedAt || null,

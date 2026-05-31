@@ -97,6 +97,8 @@ export interface ProjectReportData {
     title: string;
     assignee: string;
     status: string;
+    difficulty: string;
+    dueDate: PdfDate;
     linkedPr: string;
     prStatus: string;
     mergedAt: PdfDate;
@@ -303,22 +305,28 @@ export class PdfService {
       this.drawTable(
         doc,
         [
-          { header: 'Task', width: 0.12 },
-          { header: 'Title', width: 0.3 },
-          { header: 'Assignee', width: 0.18 },
-          { header: 'Status', width: 0.12, render: 'pill' },
-          { header: 'PR', width: 0.08 },
-          { header: 'Merged', width: 0.12 },
-          { header: 'Score', width: 0.08, align: 'right' },
+          { header: 'Task', width: 0.09 },
+          { header: 'Title', width: 0.21 },
+          { header: 'Assignee', width: 0.14 },
+          { header: 'Status', width: 0.1, render: 'pill' },
+          { header: 'Diff.', width: 0.08, render: 'pill' },
+          { header: 'Due', width: 0.09 },
+          { header: 'PR', width: 0.07 },
+          { header: 'Merged', width: 0.1 },
+          { header: 'Score', width: 0.06, align: 'right' },
+          { header: 'Overdue', width: 0.06, render: 'pill' },
         ],
         data.tasks.map((task) => [
           task.taskId,
           task.title,
           task.assignee,
           task.status,
+          task.difficulty,
+          this.formatDate(task.dueDate),
           task.linkedPr,
           this.formatDate(task.mergedAt),
           String(task.score),
+          this.dueStatus(task.dueDate, task.mergedAt, task.status),
         ]),
       );
 
@@ -554,7 +562,11 @@ export class PdfService {
   }
 
   private drawSection(doc: PDFKit.PDFDocument, title: string) {
-    this.ensureSpace(doc, 60);
+    // Reserve room for the heading + table header + one row of content so
+    // a section heading never lands at the bottom of a page with its body
+    // pushed to the next page (the classic source of "almost-blank" page
+    // tails). 100pt is enough for heading + 18pt table header + ~one row.
+    this.ensureSpace(doc, 100);
     const left = doc.page.margins.left;
 
     doc.moveDown(0.6);
@@ -671,24 +683,23 @@ export class PdfService {
       doc.y = y + h;
     };
 
-    drawHeader();
-
     if (rows.length === 0) {
-      const y = doc.y;
-      const h = 22;
-      doc.rect(left, y, usable, h).fill(COLOR.rowAlt);
+      // Skip the table chrome entirely — a header strip with "No records"
+      // wastes most of a page worth of vertical space when several
+      // sections in a row are empty (common on fresh projects).
       doc
         .font('Helvetica-Oblique')
         .fontSize(9)
         .fillColor(COLOR.muted)
-        .text('No records', left, y + 6, {
+        .text('No records yet.', left, doc.y, {
           width: usable,
-          align: 'center',
           lineBreak: false,
         });
-      doc.y = y + h + 4;
+      doc.moveDown(0.6);
       return;
     }
+
+    drawHeader();
 
     rows.forEach((row, rowIndex) => {
       // Measure tallest cell.
@@ -938,11 +949,18 @@ export class PdfService {
         'VALID',
         'ACTIVE',
         'PASSED',
+        'ON TIME',
+        'ON TRACK',
+        'LOW',
       ].includes(upper)
     ) {
       return COLOR.green;
     }
-    if (['IN_PROGRESS', 'IN PROGRESS', 'OPEN', 'COMMENTED'].includes(upper)) {
+    if (
+      ['IN_PROGRESS', 'IN PROGRESS', 'OPEN', 'COMMENTED', 'MEDIUM'].includes(
+        upper,
+      )
+    ) {
       return COLOR.blue;
     }
     if (
@@ -954,14 +972,37 @@ export class PdfService {
         'CHANGES_REQUESTED',
         'LOCKED',
         'LOCKED (FINAL)',
+        'LATE',
+        'OVERDUE',
       ].includes(upper)
     ) {
       return COLOR.red;
     }
-    if (['FLAGGED', 'WARNING'].includes(upper)) {
+    if (['FLAGGED', 'WARNING', 'HIGH'].includes(upper)) {
       return COLOR.amber;
     }
     return COLOR.gray;
+  }
+
+  /**
+   * Compact label for the "Overdue" column in the task table. Returns a
+   * string the pill renderer can color: "On time" / "Late" when the task
+   * is DONE, "On track" / "Overdue" when it isn't. Empty when there's no
+   * due date so the pill renderer prints a dash.
+   */
+  private dueStatus(
+    dueDate: PdfDate,
+    mergedAt: PdfDate,
+    status: string,
+  ): string {
+    if (!dueDate) return '';
+    const due = new Date(dueDate);
+    if (status === 'DONE') {
+      const completed = mergedAt ? new Date(mergedAt) : null;
+      if (!completed) return 'On time';
+      return completed > due ? 'Late' : 'On time';
+    }
+    return new Date() > due ? 'Overdue' : 'On track';
   }
 
   // ── utility ──────────────────────────────────────────────────────
