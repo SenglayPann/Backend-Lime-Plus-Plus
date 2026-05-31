@@ -257,7 +257,7 @@ describe('ReportsService', () => {
       ]);
 
       expect(csv.charCodeAt(0)).toBe(0xfeff);
-      expect(csv).toContain('"rank","student_name","github_username"');
+      expect(csv).toContain('"Rank","Student Name","GitHub Username"');
       expect(csv).toContain('"User 1","u1","u1@example.com"');
       expect(csv).toContain('100,1,1,1,5');
     });
@@ -364,7 +364,7 @@ describe('ReportsService', () => {
       ]);
 
       expect(csv.charCodeAt(0)).toBe(0xfeff);
-      expect(csv).toContain('"scope_type","scope_id","scope_name"');
+      expect(csv).toContain('"Scope Type","Scope ID","Scope Name"');
       expect(csv).toContain('"organization","org-1","Demo University"');
       expect(csv).toContain('"Capstone"');
       expect(csv).toContain('"User 1","u1","u1@example.com"');

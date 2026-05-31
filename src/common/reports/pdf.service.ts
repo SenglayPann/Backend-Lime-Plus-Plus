@@ -108,51 +108,95 @@ export interface ProjectReportData {
   }>;
 }
 
+// Design tokens — keep them in one place so the look stays consistent.
+const COLOR = {
+  brand: '#4d7c0f', // lime-700
+  brandSoft: '#f7fee7', // lime-50
+  ink: '#0f172a',
+  body: '#334155',
+  muted: '#64748b',
+  divider: '#e2e8f0',
+  rowAlt: '#f8fafc',
+  card: '#f1f5f9',
+  // Status pill palette: (text, bg)
+  green: { fg: '#166534', bg: '#dcfce7' },
+  blue: { fg: '#1d4ed8', bg: '#dbeafe' },
+  gray: { fg: '#475569', bg: '#e2e8f0' },
+  red: { fg: '#b91c1c', bg: '#fee2e2' },
+  amber: { fg: '#a16207', bg: '#fef3c7' },
+};
+
+interface Column {
+  header: string;
+  /** Fraction of total table width (0–1). Should sum to 1 across all columns. */
+  width: number;
+  /** "left" (default) | "right" | "center" */
+  align?: 'left' | 'right' | 'center';
+  /** Pass "pill" to render the cell value as a status badge. */
+  render?: 'pill';
+}
+
 @Injectable()
 export class PdfService {
   async generateIndividualReport(data: IndividualReportData): Promise<Buffer> {
     return this.createDocument((doc) => {
-      this.generateHeader(doc, 'Individual Contribution Report');
+      this.drawHeader(doc, 'Individual Contribution Report');
 
-      this.section(doc, 'Student');
-      this.keyValues(doc, [
+      // Hero score card up top — what reviewers look at first.
+      this.drawHeroScoreCard(doc, {
+        name: data.student.name,
+        subtitle: `${data.student.projectRole.replace(/_/g, ' ')} · ${data.project.name}`,
+        totalScore: data.score.totalScore,
+        breakdown: [
+          { label: 'Task completion', value: data.score.taskCompletionPoints },
+          { label: 'Reviews', value: data.score.reviewPoints },
+          { label: 'Overrides', value: data.score.overrideDelta },
+        ],
+      });
+
+      this.drawSection(doc, 'Student & Project');
+      this.drawKeyValueGrid(doc, [
         ['Name', data.student.name],
         ['GitHub', data.student.githubUsername],
         ['Email', data.student.email],
-        ['Project role', data.student.projectRole],
+        ['Project role', data.student.projectRole.replace(/_/g, ' ')],
         ['Organization', data.project.organization],
         ['Department', data.project.department],
         ['Project', data.project.name],
         ['Repository', data.project.repository || 'N/A'],
-      ]);
-
-      this.section(doc, 'Score Summary');
-      this.keyValues(doc, [
-        ['Final score', String(data.score.totalScore)],
-        ['Task completion points', String(data.score.taskCompletionPoints)],
-        ['Review points', String(data.score.reviewPoints)],
-        ['Override delta', String(data.score.overrideDelta)],
         ['Last score update', this.formatDate(data.score.lastUpdated)],
         ['Generated at', this.formatDateTime(data.project.generatedAt)],
       ]);
 
-      this.section(doc, 'Contribution Evidence');
-      this.table(
+      this.drawSection(doc, 'Contribution Evidence');
+      this.drawTable(
         doc,
-        ['Task', 'PR', 'Status', 'Merged', 'Score'],
+        [
+          { header: 'Task', width: 0.18 },
+          { header: 'Title', width: 0.3 },
+          { header: 'PR', width: 0.1 },
+          { header: 'Status', width: 0.12, render: 'pill' },
+          { header: 'Merged', width: 0.16 },
+          { header: 'Score', width: 0.14, align: 'right' },
+        ],
         data.contributionEvidence.map((item) => [
-          `${item.taskId} ${item.title}`,
-          `#${item.prNumber} ${item.prTitle}`,
+          item.taskId,
+          item.title,
+          `#${item.prNumber}`,
           item.status,
           this.formatDate(item.mergedAt),
           String(item.score),
         ]),
       );
 
-      this.section(doc, 'Reviews');
-      this.table(
+      this.drawSection(doc, 'Reviews');
+      this.drawTable(
         doc,
-        ['PR', 'State', 'Date'],
+        [
+          { header: 'PR', width: 0.2 },
+          { header: 'State', width: 0.3, render: 'pill' },
+          { header: 'Date', width: 0.5 },
+        ],
         data.reviews.map((review) => [
           `#${review.prNumber}`,
           review.state,
@@ -160,83 +204,76 @@ export class PdfService {
         ]),
       );
 
-      this.section(doc, 'Score Overrides');
-      this.table(
+      this.drawSection(doc, 'Score Overrides');
+      this.drawTable(
         doc,
-        ['Delta', 'Reason', 'By', 'Date'],
+        [
+          { header: 'Delta', width: 0.12, align: 'right' },
+          { header: 'Reason', width: 0.48 },
+          { header: 'By', width: 0.2 },
+          { header: 'Date', width: 0.2 },
+        ],
         data.overrides.map((override) => [
-          String(override.delta),
+          this.formatDelta(override.delta),
           override.reason,
           override.overriddenBy,
           this.formatDate(override.createdAt),
         ]),
       );
 
-      this.section(doc, 'Warnings / Non-scoring Activity');
-      data.warnings.forEach((warning) => this.bullet(doc, warning));
+      this.drawSection(doc, 'Warnings & Non-scoring Activity');
+      data.warnings.forEach((warning) => this.drawBullet(doc, warning));
 
-      this.section(doc, 'Scoring Notes');
+      this.drawSection(doc, 'Scoring Notes');
       [
         'Only merged pull request evidence contributes to task completion score.',
-        'Moving a Kanban card to Done changes task status only; it does not create score by itself.',
+        'Moving a Kanban card to Done changes task status only; it does not create score.',
         'Completed task timestamps come from pull request merge time.',
-      ].forEach((note) => this.bullet(doc, note));
+      ].forEach((note) => this.drawBullet(doc, note));
     });
   }
 
   async generateProjectReport(data: ProjectReportData): Promise<Buffer> {
     return this.createDocument((doc) => {
-      this.generateHeader(doc, 'Project Evaluation Report');
+      this.drawHeader(doc, 'Project Evaluation Report');
 
-      this.section(doc, 'Project');
-      this.keyValues(doc, [
-        ['Project name', data.project.name],
+      this.drawProjectCover(doc, data);
+
+      this.drawSection(doc, 'Project Details');
+      this.drawKeyValueGrid(doc, [
+        ['Project', data.project.name],
         ['Organization', data.project.organization],
         ['Department', data.project.department],
         ['Repository', data.project.repository || 'N/A'],
         ['GitHub Project V2 ID', data.project.externalProjectId],
         ['Status', data.project.status],
+        ['Project manager(s)', data.leadership.projectManagers.join(', ')],
         [
           'Evaluation window',
-          `${this.formatDate(data.project.evalStart)} to ${this.formatDate(
-            data.project.evalEnd,
-          )}`,
+          `${this.formatDate(data.project.evalStart)} → ${this.formatDate(data.project.evalEnd)}`,
         ],
         ['Locked at', this.formatDateTime(data.project.lockedAt)],
         ['Generated at', this.formatDateTime(data.project.generatedAt)],
       ]);
 
-      this.section(doc, 'Project Leadership');
-      this.keyValues(doc, [
-        ['Project manager(s)', data.leadership.projectManagers.join(', ')],
-      ]);
-
-      this.section(doc, 'Scoring Rules Summary');
-      [
-        'Scoring source: merged pull requests linked to tasks.',
-        'Kanban Done movement is status only and does not create score by itself.',
-        'Completed task timestamp source: pull request merge timestamp.',
-        'Retroactive linking after project lock is blocked.',
-      ].forEach((note) => this.bullet(doc, note));
-
-      this.section(doc, 'Team Summary');
-      this.keyValues(doc, [
-        ['Total members', String(data.summary.totalMembers)],
-        ['Active contributors', String(data.summary.activeContributors)],
-        ['Total tasks', String(data.summary.totalTasks)],
-        ['Done tasks', String(data.summary.doneTasks)],
-        ['Merged PRs', String(data.summary.mergedPrs)],
-        ['Average done tasks', String(data.summary.averageDoneTasks)],
-      ]);
-
-      this.section(doc, 'Leaderboard');
-      this.table(
+      this.drawSection(doc, 'Leaderboard');
+      this.drawTable(
         doc,
-        ['#', 'Student', 'GitHub', 'Done', 'Merged PRs', 'Reviews', 'Score'],
+        [
+          { header: '#', width: 0.05, align: 'right' },
+          { header: 'Student', width: 0.24 },
+          { header: 'GitHub', width: 0.18 },
+          { header: 'Role', width: 0.18 },
+          { header: 'Done', width: 0.08, align: 'right' },
+          { header: 'PRs', width: 0.08, align: 'right' },
+          { header: 'Reviews', width: 0.09, align: 'right' },
+          { header: 'Score', width: 0.1, align: 'right' },
+        ],
         data.members.map((member, index) => [
           String(index + 1),
           member.name,
           member.githubUsername,
+          member.projectRole.replace(/_/g, ' '),
           String(member.doneTasks),
           String(member.mergedPrs),
           String(member.approvedReviews),
@@ -244,12 +281,21 @@ export class PdfService {
         ]),
       );
 
-      this.section(doc, 'Task Evidence');
-      this.table(
+      this.drawSection(doc, 'Task Evidence');
+      this.drawTable(
         doc,
-        ['Task', 'Assignee', 'Status', 'PR', 'Merged', 'Score'],
+        [
+          { header: 'Task', width: 0.12 },
+          { header: 'Title', width: 0.3 },
+          { header: 'Assignee', width: 0.18 },
+          { header: 'Status', width: 0.12, render: 'pill' },
+          { header: 'PR', width: 0.08 },
+          { header: 'Merged', width: 0.12 },
+          { header: 'Score', width: 0.08, align: 'right' },
+        ],
         data.tasks.map((task) => [
-          `${task.taskId} ${task.title}`,
+          task.taskId,
+          task.title,
           task.assignee,
           task.status,
           task.linkedPr,
@@ -258,38 +304,60 @@ export class PdfService {
         ]),
       );
 
-      this.section(doc, 'Score Overrides');
-      this.table(
+      this.drawSection(doc, 'Score Overrides');
+      this.drawTable(
         doc,
-        ['Student', 'Delta', 'Reason', 'By', 'Date'],
+        [
+          { header: 'Student', width: 0.2 },
+          { header: 'Delta', width: 0.1, align: 'right' },
+          { header: 'Reason', width: 0.34 },
+          { header: 'By', width: 0.18 },
+          { header: 'Date', width: 0.18 },
+        ],
         data.overrides.map((override) => [
           override.student,
-          String(override.delta),
+          this.formatDelta(override.delta),
           override.reason,
           override.overriddenBy,
           this.formatDate(override.createdAt),
         ]),
       );
 
-      this.section(doc, 'Audit Trail');
-      this.table(
+      this.drawSection(doc, 'Audit Trail');
+      this.drawTable(
         doc,
-        ['Action', 'Actor', 'Date', 'Metadata'],
+        [
+          { header: 'Action', width: 0.15 },
+          { header: 'Actor', width: 0.18 },
+          { header: 'Date', width: 0.12 },
+          { header: 'Details', width: 0.55 },
+        ],
         data.auditLogs.map((entry) => [
-          entry.action,
+          entry.action.replace(/_/g, ' '),
           entry.actor,
           this.formatDate(entry.createdAt),
           entry.metadata,
         ]),
       );
+
+      this.drawSection(doc, 'Scoring Rules');
+      [
+        'Source of truth: merged pull requests linked to tasks.',
+        'Kanban Done movement is status-only and never creates score.',
+        'Completed-task timestamp comes from pull-request merge time.',
+        'Retroactive linking after project lock is blocked.',
+      ].forEach((note) => this.drawBullet(doc, note));
     });
   }
+
+  // ── document lifecycle ───────────────────────────────────────────
 
   private createDocument(draw: (doc: PDFKit.PDFDocument) => void) {
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
         margin: 48,
         size: 'A4',
+        bufferPages: true, // needed to back-fill page numbers
         info: {
           Title: 'Lime++ Evaluation Report',
           Author: 'Lime++',
@@ -303,75 +371,485 @@ export class PdfService {
       doc.on('error', reject);
 
       draw(doc);
+
+      // Page footer with page numbers, drawn after content so we know the count.
+      const range = doc.bufferedPageRange();
+      for (let i = 0; i < range.count; i += 1) {
+        doc.switchToPage(range.start + i);
+        this.drawFooter(doc, i + 1, range.count);
+      }
+
       doc.end();
     });
   }
 
-  private generateHeader(doc: PDFKit.PDFDocument, title: string) {
+  // ── layout primitives ────────────────────────────────────────────
+
+  private drawHeader(doc: PDFKit.PDFDocument, title: string) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+
     doc
-      .fillColor('#4d7c0f')
-      .fontSize(20)
-      .text('Lime++', { align: 'right' })
-      .fillColor('#334155')
-      .fontSize(9)
-      .text('Objective Technical Evaluation System', { align: 'right' })
-      .moveDown(1.5);
+      .fillColor(COLOR.brand)
+      .font('Helvetica-Bold')
+      .fontSize(18)
+      .text('Lime++', left, doc.page.margins.top - 8)
+      .fillColor(COLOR.muted)
+      .font('Helvetica')
+      .fontSize(8)
+      .text('Objective Technical Evaluation', { align: 'left' });
 
-    doc.fillColor('#111827').fontSize(22).text(title).moveDown(0.5);
-    doc.moveTo(48, doc.y).lineTo(547, doc.y).strokeColor('#cbd5e1').stroke();
-    doc.moveDown();
-  }
-
-  private section(doc: PDFKit.PDFDocument, title: string) {
-    this.ensureSpace(doc, 80);
     doc
-      .moveDown(0.6)
-      .fillColor('#111827')
-      .fontSize(14)
-      .text(title)
-      .moveDown(0.3);
-  }
+      .fillColor(COLOR.ink)
+      .font('Helvetica-Bold')
+      .fontSize(22)
+      .text(title, left, doc.y + 12, {
+        width: right - left,
+        align: 'left',
+      });
 
-  private keyValues(doc: PDFKit.PDFDocument, rows: Array<[string, string]>) {
-    rows.forEach(([key, value]) => {
-      this.ensureSpace(doc, 24);
-      doc
-        .fontSize(9)
-        .fillColor('#475569')
-        .text(`${key}: `, { continued: true })
-        .fillColor('#111827')
-        .text(value || 'N/A');
-    });
-    doc.moveDown(0.4);
-  }
-
-  private table(doc: PDFKit.PDFDocument, headers: string[], rows: string[][]) {
-    const normalizedRows = rows.length ? rows : [['No records']];
-    this.ensureSpace(doc, 42);
-    doc.fontSize(8).fillColor('#111827').text(headers.join(' | '));
     doc
-      .moveTo(48, doc.y + 2)
-      .lineTo(547, doc.y + 2)
-      .strokeColor('#e2e8f0')
+      .moveTo(left, doc.y + 4)
+      .lineTo(right, doc.y + 4)
+      .lineWidth(0.5)
+      .strokeColor(COLOR.brand)
       .stroke();
-    doc.moveDown(0.4);
 
-    normalizedRows.forEach((row) => {
-      this.ensureSpace(doc, 32);
+    doc.moveDown(1.4);
+  }
+
+  private drawFooter(doc: PDFKit.PDFDocument, page: number, total: number) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const bottom = doc.page.height - doc.page.margins.bottom + 18;
+
+    doc
+      .fontSize(8)
+      .fillColor(COLOR.muted)
+      .text('Lime++ · Objective Technical Evaluation', left, bottom, {
+        width: right - left,
+        align: 'left',
+        lineBreak: false,
+      })
+      .text(`Page ${page} of ${total}`, left, bottom, {
+        width: right - left,
+        align: 'right',
+        lineBreak: false,
+      });
+  }
+
+  private drawSection(doc: PDFKit.PDFDocument, title: string) {
+    this.ensureSpace(doc, 60);
+    const left = doc.page.margins.left;
+
+    doc.moveDown(0.6);
+    const y = doc.y;
+    // Lime accent bar to the left of the heading.
+    doc.rect(left, y + 3, 3, 14).fill(COLOR.brand);
+    doc
+      .fillColor(COLOR.ink)
+      .font('Helvetica-Bold')
+      .fontSize(13)
+      .text(title, left + 10, y);
+    doc.moveDown(0.4);
+  }
+
+  private drawBullet(doc: PDFKit.PDFDocument, text: string) {
+    this.ensureSpace(doc, 22);
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+
+    doc.fillColor(COLOR.brand).fontSize(9).text('•', left, doc.y, {
+      lineBreak: false,
+    });
+    doc
+      .fillColor(COLOR.body)
+      .font('Helvetica')
+      .fontSize(9)
+      .text(text, left + 12, doc.y, {
+        width: right - left - 12,
+      });
+    doc.moveDown(0.2);
+  }
+
+  /**
+   * Two-column key/value list — sturdier than the previous single-line
+   * "Key: Value" layout because long values wrap inside their column
+   * without pushing the next row off the page.
+   */
+  private drawKeyValueGrid(
+    doc: PDFKit.PDFDocument,
+    rows: Array<[string, string]>,
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const usable = right - left;
+    const labelWidth = 130;
+    const valueWidth = usable - labelWidth - 8;
+
+    rows.forEach(([key, value]) => {
+      const display = value || 'N/A';
+      const rowHeight = Math.max(
+        14,
+        doc
+          .font('Helvetica')
+          .fontSize(9)
+          .heightOfString(display, { width: valueWidth }) + 4,
+      );
+      this.ensureSpace(doc, rowHeight + 4);
+
+      const y = doc.y;
       doc
-        .fontSize(8)
-        .fillColor('#334155')
-        .text(row.map((cell) => this.truncate(cell, 42)).join(' | '), {
-          lineGap: 2,
+        .font('Helvetica')
+        .fontSize(9)
+        .fillColor(COLOR.muted)
+        .text(key, left, y, { width: labelWidth, lineBreak: false });
+      doc
+        .fillColor(COLOR.ink)
+        .text(display, left + labelWidth + 8, y, { width: valueWidth });
+      doc.y = y + rowHeight;
+    });
+    doc.moveDown(0.3);
+  }
+
+  // ── tables ───────────────────────────────────────────────────────
+
+  /**
+   * Real columnar table with header fill and alternating row stripes.
+   * Each cell wraps inside its column width and the row height is the
+   * max of cell heights so columns stay aligned.
+   */
+  private drawTable(
+    doc: PDFKit.PDFDocument,
+    columns: Column[],
+    rows: string[][],
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const usable = right - left;
+    const colWidths = columns.map((c) => usable * c.width);
+    const colX: number[] = [];
+    let cursor = left;
+    for (const w of colWidths) {
+      colX.push(cursor);
+      cursor += w;
+    }
+    const cellPad = 4;
+
+    const drawHeader = () => {
+      const h = 18;
+      this.ensureSpace(doc, h + 24);
+      const y = doc.y;
+      doc.rect(left, y, usable, h).fill(COLOR.brand);
+      columns.forEach((col, i) => {
+        const align = col.align || 'left';
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(8.5)
+          .fillColor('#ffffff')
+          .text(col.header.toUpperCase(), colX[i] + cellPad, y + 5, {
+            width: colWidths[i] - cellPad * 2,
+            align,
+            lineBreak: false,
+          });
+      });
+      doc.y = y + h;
+    };
+
+    drawHeader();
+
+    if (rows.length === 0) {
+      const y = doc.y;
+      const h = 22;
+      doc.rect(left, y, usable, h).fill(COLOR.rowAlt);
+      doc
+        .font('Helvetica-Oblique')
+        .fontSize(9)
+        .fillColor(COLOR.muted)
+        .text('No records', left, y + 6, {
+          width: usable,
+          align: 'center',
+          lineBreak: false,
+        });
+      doc.y = y + h + 4;
+      return;
+    }
+
+    rows.forEach((row, rowIndex) => {
+      // Measure tallest cell.
+      doc.font('Helvetica').fontSize(8.5);
+      const cellHeights = row.map((value, i) => {
+        const col = columns[i];
+        const text = value || '—';
+        if (col.render === 'pill') return 16;
+        return (
+          doc.heightOfString(text, { width: colWidths[i] - cellPad * 2 }) + 2
+        );
+      });
+      const rowHeight = Math.max(18, Math.max(...cellHeights) + 6);
+
+      // Page break — re-draw the header on the new page so the table
+      // remains readable across spreads.
+      if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom - 30) {
+        doc.addPage();
+        drawHeader();
+      }
+
+      const y = doc.y;
+      if (rowIndex % 2 === 1) {
+        doc.rect(left, y, usable, rowHeight).fill(COLOR.rowAlt);
+      }
+
+      row.forEach((value, i) => {
+        const col = columns[i];
+        const display = value && value.length > 0 ? value : '—';
+        const x = colX[i] + cellPad;
+        const w = colWidths[i] - cellPad * 2;
+        const align = col.align || 'left';
+
+        if (col.render === 'pill') {
+          this.drawPill(doc, display, x, y + (rowHeight - 14) / 2, w);
+          return;
+        }
+        doc
+          .font('Helvetica')
+          .fontSize(8.5)
+          .fillColor(COLOR.body)
+          .text(display, x, y + 5, { width: w, align });
+      });
+
+      // Bottom divider line for clarity.
+      doc
+        .moveTo(left, y + rowHeight)
+        .lineTo(right, y + rowHeight)
+        .lineWidth(0.3)
+        .strokeColor(COLOR.divider)
+        .stroke();
+      doc.y = y + rowHeight;
+    });
+    doc.moveDown(0.5);
+  }
+
+  // ── hero & summary visuals ───────────────────────────────────────
+
+  private drawHeroScoreCard(
+    doc: PDFKit.PDFDocument,
+    data: {
+      name: string;
+      subtitle: string;
+      totalScore: number;
+      breakdown: Array<{ label: string; value: number }>;
+    },
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const usable = right - left;
+    const h = 90;
+    const y = doc.y;
+
+    doc.roundedRect(left, y, usable, h, 6).fill(COLOR.brandSoft);
+    doc
+      .roundedRect(left, y, usable, h, 6)
+      .lineWidth(0.5)
+      .strokeColor(COLOR.brand)
+      .stroke();
+
+    // Left: name + subtitle
+    doc
+      .fillColor(COLOR.muted)
+      .font('Helvetica')
+      .fontSize(8)
+      .text('CONTRIBUTOR', left + 16, y + 14, { lineBreak: false });
+    doc
+      .fillColor(COLOR.ink)
+      .font('Helvetica-Bold')
+      .fontSize(16)
+      .text(data.name, left + 16, y + 26, {
+        width: usable * 0.55 - 16,
+        lineBreak: false,
+      });
+    doc
+      .fillColor(COLOR.muted)
+      .font('Helvetica')
+      .fontSize(9)
+      .text(data.subtitle, left + 16, y + 48, {
+        width: usable * 0.55 - 16,
+        lineBreak: false,
+      });
+
+    // Right: huge total score
+    const scoreX = left + usable * 0.6;
+    doc
+      .fillColor(COLOR.muted)
+      .font('Helvetica')
+      .fontSize(8)
+      .text('TOTAL SCORE', scoreX, y + 14, {
+        width: usable * 0.4 - 16,
+        align: 'right',
+        lineBreak: false,
+      });
+    doc
+      .fillColor(COLOR.brand)
+      .font('Helvetica-Bold')
+      .fontSize(32)
+      .text(String(data.totalScore), scoreX, y + 26, {
+        width: usable * 0.4 - 16,
+        align: 'right',
+        lineBreak: false,
+      });
+
+    doc.y = y + h + 10;
+
+    // Breakdown chips row below the card.
+    const chipH = 38;
+    const chipGap = 10;
+    const chipW = (usable - chipGap * (data.breakdown.length - 1)) /
+      data.breakdown.length;
+    const cy = doc.y;
+    data.breakdown.forEach((entry, i) => {
+      const cx = left + i * (chipW + chipGap);
+      doc.roundedRect(cx, cy, chipW, chipH, 4).fill(COLOR.card);
+      doc
+        .fillColor(COLOR.muted)
+        .font('Helvetica')
+        .fontSize(7.5)
+        .text(entry.label.toUpperCase(), cx + 10, cy + 6, {
+          width: chipW - 20,
+          lineBreak: false,
+        });
+      doc
+        .fillColor(COLOR.ink)
+        .font('Helvetica-Bold')
+        .fontSize(15)
+        .text(this.formatDelta(entry.value), cx + 10, cy + 17, {
+          width: chipW - 20,
+          lineBreak: false,
         });
     });
-    doc.moveDown(0.4);
+    doc.y = cy + chipH + 8;
   }
 
-  private bullet(doc: PDFKit.PDFDocument, text: string) {
-    this.ensureSpace(doc, 24);
-    doc.fontSize(9).fillColor('#334155').text(`- ${text}`);
+  private drawProjectCover(
+    doc: PDFKit.PDFDocument,
+    data: ProjectReportData,
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const usable = right - left;
+
+    // Project name as a hero line, then status pill underneath.
+    doc
+      .fillColor(COLOR.ink)
+      .font('Helvetica-Bold')
+      .fontSize(20)
+      .text(data.project.name, left, doc.y, { width: usable });
+    this.drawPill(doc, data.project.status, left, doc.y + 4, 140);
+    doc.moveDown(2);
+
+    // 6-up stats strip across the page.
+    const stats: Array<[string, string]> = [
+      ['Members', String(data.summary.totalMembers)],
+      ['Active', String(data.summary.activeContributors)],
+      ['Tasks', String(data.summary.totalTasks)],
+      ['Done', String(data.summary.doneTasks)],
+      ['Merged PRs', String(data.summary.mergedPrs)],
+      ['Avg done', String(data.summary.averageDoneTasks)],
+    ];
+    const gap = 8;
+    const cardW = (usable - gap * (stats.length - 1)) / stats.length;
+    const cardH = 52;
+    const cy = doc.y;
+    stats.forEach(([label, value], i) => {
+      const cx = left + i * (cardW + gap);
+      doc.roundedRect(cx, cy, cardW, cardH, 5).fill(COLOR.card);
+      doc
+        .fillColor(COLOR.muted)
+        .font('Helvetica')
+        .fontSize(7.5)
+        .text(label.toUpperCase(), cx, cy + 8, {
+          width: cardW,
+          align: 'center',
+          lineBreak: false,
+        });
+      doc
+        .fillColor(COLOR.ink)
+        .font('Helvetica-Bold')
+        .fontSize(18)
+        .text(value, cx, cy + 22, {
+          width: cardW,
+          align: 'center',
+          lineBreak: false,
+        });
+    });
+    doc.y = cy + cardH + 12;
   }
+
+  // ── pills ────────────────────────────────────────────────────────
+
+  private drawPill(
+    doc: PDFKit.PDFDocument,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+  ) {
+    const palette = this.pillPalette(text);
+    const display = text || '—';
+
+    doc.font('Helvetica-Bold').fontSize(7.5);
+    const textW = Math.min(
+      doc.widthOfString(display.toUpperCase()),
+      maxWidth - 12,
+    );
+    const pillW = textW + 12;
+    const pillH = 14;
+
+    doc.roundedRect(x, y, pillW, pillH, pillH / 2).fill(palette.bg);
+    doc
+      .fillColor(palette.fg)
+      .text(display.toUpperCase(), x + 6, y + 3.5, {
+        width: textW,
+        lineBreak: false,
+      });
+  }
+
+  private pillPalette(value: string): { fg: string; bg: string } {
+    const upper = (value || '').toUpperCase();
+    if (
+      [
+        'DONE',
+        'MERGED',
+        'APPROVED',
+        'VALID',
+        'ACTIVE',
+        'PASSED',
+      ].includes(upper)
+    ) {
+      return COLOR.green;
+    }
+    if (['IN_PROGRESS', 'IN PROGRESS', 'OPEN', 'COMMENTED'].includes(upper)) {
+      return COLOR.blue;
+    }
+    if (
+      [
+        'BLOCKED',
+        'FAILED',
+        'CLOSED',
+        'INVALID',
+        'CHANGES_REQUESTED',
+        'LOCKED',
+        'LOCKED (FINAL)',
+      ].includes(upper)
+    ) {
+      return COLOR.red;
+    }
+    if (['FLAGGED', 'WARNING'].includes(upper)) {
+      return COLOR.amber;
+    }
+    return COLOR.gray;
+  }
+
+  // ── utility ──────────────────────────────────────────────────────
 
   private ensureSpace(doc: PDFKit.PDFDocument, height: number) {
     if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
@@ -379,20 +857,18 @@ export class PdfService {
     }
   }
 
-  private truncate(value: string, maxLength: number) {
-    if (!value) return 'N/A';
-    return value.length > maxLength
-      ? `${value.slice(0, maxLength - 3)}...`
-      : value;
-  }
-
   private formatDate(value: PdfDate) {
-    if (!value) return 'N/A';
+    if (!value) return '—';
     return new Date(value).toISOString().slice(0, 10);
   }
 
   private formatDateTime(value: PdfDate) {
-    if (!value) return 'N/A';
+    if (!value) return '—';
     return new Date(value).toISOString().replace('T', ' ').slice(0, 16);
+  }
+
+  private formatDelta(value: number) {
+    if (value > 0) return `+${value}`;
+    return String(value);
   }
 }
