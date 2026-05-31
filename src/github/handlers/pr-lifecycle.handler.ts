@@ -94,7 +94,11 @@ export class PrLifecycleHandler {
 
     switch (action) {
       case 'opened':
+      case 'reopened':
       case 'synchronize':
+      case 'edited':
+        // 'edited' covers title/body changes that may add or remove a TASK-N
+        // reference; we re-parse so linkage stays in sync with the PR copy.
         await this.handleOpenedOrSync(
           project,
           pull_request,
@@ -191,7 +195,11 @@ export class PrLifecycleHandler {
       }
     }
 
-    // Persist/update PR record (upsert on projectId + externalPrId)
+    // Persist/update PR record (upsert on projectId + externalPrId).
+    // For opened/reopened/synchronize/edited the PR's GitHub state is 'open',
+    // so reset our status accordingly — without this, reopening a previously
+    // CLOSED PR leaves the row stuck at CLOSED in the UI.
+    const isOpen = pr.state === 'open';
     await this.prisma.pullRequest.upsert({
       where: {
         projectId_externalPrId: {
@@ -213,6 +221,7 @@ export class PrLifecycleHandler {
         title: pr.title,
         url: pr.html_url,
         taskId: task?.id ?? undefined,
+        ...(isOpen ? { status: 'OPEN' as const, mergedAt: null } : {}),
       },
     });
 
