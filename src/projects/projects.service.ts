@@ -626,6 +626,15 @@ export class ProjectsService {
     if (!projectScope) {
       throw new NotFoundException('Project not found');
     }
+    // Roll up the user into the org first so the affiliation check passes
+    // even for brand-new contributors. The role being assigned implies
+    // they're part of this org; modeling it explicitly keeps the
+    // organization member list in sync with the project member list.
+    await this.roleDelegationService.ensureOrganizationMembership(
+      userId,
+      projectScope.department.organizationId,
+      actorId,
+    );
     await this.assertUserBelongsToProjectOrganization(
       userId,
       projectScope.department.organizationId,

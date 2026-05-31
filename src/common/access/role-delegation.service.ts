@@ -31,6 +31,69 @@ export class RoleDelegationService {
     await this.assertTargetIsNotProtected(actorId, actorRoles, targetUserId);
   }
 
+  /**
+   * Idempotently ensure the user has an ORGANIZATION_MEMBER role for the
+   * given organization. Any scoped role assignment (PROJECT_MANAGER on a
+   * project in org X, DEPARTMENT_MANAGER in a department of org X, etc.)
+   * implies the user is part of org X — modeling it explicitly keeps the
+   * org member list, project member list, and Users & Roles view
+   * consistent. Returns true if a row was newly created.
+   */
+  async ensureOrganizationMembership(
+    userId: string,
+    organizationId: string | null | undefined,
+    actorId: string,
+  ): Promise<boolean> {
+    if (!organizationId) return false;
+
+    const existing = await this.prisma.userRole.findFirst({
+      where: {
+        userId,
+        organizationId,
+        role: PrismaRole.ORGANIZATION_MEMBER,
+      },
+      select: { id: true },
+    });
+    if (existing) return false;
+
+    await this.prisma.userRole.create({
+      data: {
+        userId,
+        role: PrismaRole.ORGANIZATION_MEMBER,
+        organizationId,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: AuditAction.ROLE_CHANGE,
+        actorId,
+        metadata: {
+          operation: 'auto_grant_member',
+          targetUserId: userId,
+          role: PrismaRole.ORGANIZATION_MEMBER,
+          organizationId,
+          reason: 'Implicit grant from scoped role assignment',
+        },
+      },
+    });
+
+    return true;
+  }
+
+  /**
+   * Look up the organization a department belongs to. Used by callers
+   * that need to fold a department- or project-scoped role assignment
+   * back into an org membership.
+   */
+  async resolveDepartmentOrganization(departmentId: string): Promise<string | null> {
+    const dept = await this.prisma.department.findUnique({
+      where: { id: departmentId },
+      select: { organizationId: true },
+    });
+    return dept?.organizationId ?? null;
+  }
+
   async assignUserRole(
     actorId: string,
     actorRoles: Role[],
@@ -84,6 +147,25 @@ export class RoleDelegationService {
         },
       },
     });
+
+    // Roll up org membership for any scoped role that lives inside an
+    // organization. ORGANIZATION_MEMBER is the role itself — no rollup.
+    // ADMIN has no scope, also nothing to roll up.
+    if (
+      role !== PrismaRole.ADMIN &&
+      role !== PrismaRole.ORGANIZATION_MEMBER
+    ) {
+      const orgIdForMembership =
+        organizationId ||
+        (departmentId
+          ? await this.resolveDepartmentOrganization(departmentId)
+          : null);
+      await this.ensureOrganizationMembership(
+        targetUserId,
+        orgIdForMembership,
+        actorId,
+      );
+    }
 
     return created;
   }

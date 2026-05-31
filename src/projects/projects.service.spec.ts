@@ -55,6 +55,7 @@ describe('ProjectsService project membership', () => {
   };
   const roleDelegationService = {
     assertTargetCanBeManaged: jest.fn(),
+    ensureOrganizationMembership: jest.fn().mockResolvedValue(false),
   };
   const userVisibilityService = {
     buildVisibleUserWhere: jest.fn(),
