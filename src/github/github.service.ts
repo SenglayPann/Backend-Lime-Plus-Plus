@@ -60,6 +60,119 @@ export class GitHubService {
   }
 
   /**
+   * Mint an app-level JWT for endpoints that act as the app itself
+   * (e.g. /app, /repos/{owner}/{repo}/installation). Returns null when
+   * GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY aren't configured.
+   */
+  private async getAppJwt(): Promise<string | null> {
+    const appId = this.configService.get<string>('GITHUB_APP_ID');
+    const privateKey = this.configService.get<string>('GITHUB_APP_PRIVATE_KEY');
+    if (!appId || !privateKey) return null;
+
+    try {
+      const auth = createAppAuth({
+        appId,
+        privateKey: privateKey.replace(/\\n/g, '\n'),
+      });
+      const appAuth = await auth({ type: 'app' });
+      return appAuth.token;
+    } catch (error) {
+      this.logger.error('Failed to mint GitHub App JWT', error);
+      return null;
+    }
+  }
+
+  private cachedAppSlug: string | null = null;
+
+  /**
+   * Fetch this app's public slug (cached). Used to build install URLs
+   * like https://github.com/apps/{slug}/installations/new.
+   */
+  async getAppSlug(): Promise<string | null> {
+    if (this.cachedAppSlug) return this.cachedAppSlug;
+
+    const jwt = await this.getAppJwt();
+    if (!jwt) return null;
+
+    try {
+      const res = await fetch('https://api.github.com/app', {
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+      if (!res.ok) {
+        this.logger.warn(`GET /app returned ${res.status}`);
+        return null;
+      }
+      const data = (await res.json()) as { slug?: string };
+      this.cachedAppSlug = data.slug ?? null;
+      return this.cachedAppSlug;
+    } catch (error) {
+      this.logger.error('Failed to fetch app metadata', error);
+      return null;
+    }
+  }
+
+  /**
+   * Check whether the Lime++ GitHub App is installed on a given repo's
+   * owner. Webhooks only fire from the owner's installation, so being a
+   * collaborator on a repo whose owner hasn't installed the app yields
+   * zero events.
+   *
+   * Returns { installed: true } when the app can see the repo. Returns
+   * { installed: false, installUrl } with a link the owner can follow
+   * to install it. Falls back to installed:true when app credentials
+   * aren't configured (so local dev without an App configured doesn't
+   * block project creation).
+   */
+  async checkAppInstallation(
+    owner: string,
+    repo: string,
+  ): Promise<{ installed: boolean; installUrl: string | null }> {
+    const jwt = await this.getAppJwt();
+    if (!jwt) {
+      // App not configured at all — don't block; let the user proceed.
+      return { installed: true, installUrl: null };
+    }
+
+    let installed = false;
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/installation`,
+        {
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        },
+      );
+      if (res.status === 200) {
+        installed = true;
+      } else if (res.status !== 404) {
+        this.logger.warn(
+          `Unexpected status ${res.status} from /repos/${owner}/${repo}/installation`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `App installation check failed for ${owner}/${repo}`,
+        error,
+      );
+    }
+
+    if (installed) return { installed: true, installUrl: null };
+
+    const slug = await this.getAppSlug();
+    const installUrl = slug
+      ? `https://github.com/apps/${slug}/installations/new`
+      : null;
+    return { installed: false, installUrl };
+  }
+
+  /**
    * Create an authenticated GraphQL client using a user's access token
    */
   private getAuthenticatedClient(accessToken: string) {

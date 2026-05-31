@@ -323,9 +323,10 @@ export class ProjectsService {
     }
 
     const [, owner, repo] = match;
-    const [repositoryInfo, projectExists] = await Promise.all([
+    const [repositoryInfo, projectExists, installation] = await Promise.all([
       this.githubService.getRepositoryInfo(owner, repo, accessToken),
       this.githubService.projectV2Exists(dto.github_project_id, accessToken),
+      this.githubService.checkAppInstallation(owner, repo),
     ]);
 
     if (!repositoryInfo) {
@@ -338,6 +339,16 @@ export class ProjectsService {
       throw new BadRequestException(
         'GitHub Project V2 was not found or the token cannot access it',
       );
+    }
+
+    if (!installation.installed) {
+      throw new BadRequestException({
+        code: 'APP_NOT_INSTALLED',
+        owner,
+        repository,
+        installUrl: installation.installUrl,
+        message: `The Lime++ GitHub App is not installed on ${owner}. Without it, pull request and issue events for ${repository} cannot reach Lime++. Ask ${owner} to install the app${installation.installUrl ? ` at ${installation.installUrl}` : ''}, then try again.`,
+      });
     }
 
     return { repositoryId: repositoryInfo.id };

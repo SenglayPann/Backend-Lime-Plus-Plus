@@ -36,6 +36,9 @@ describe('ProjectsService project membership', () => {
     repositoryExists: jest.fn(),
     projectV2Exists: jest.fn(),
     isCollaborator: jest.fn(),
+    checkAppInstallation: jest
+      .fn()
+      .mockResolvedValue({ installed: true, installUrl: null }),
   };
   const configService = { get: jest.fn() };
   const usersService = { getGitHubAccessToken: jest.fn() };
